@@ -9,6 +9,7 @@ export type StartupDocs = {
 };
 
 export type TaskMode = 'quick' | 'standard' | 'deep';
+export type GitBranchMode = 'current' | 'new';
 
 export type ProjectRunConfig = {
   model: string | null;
@@ -17,6 +18,10 @@ export type ProjectRunConfig = {
   skill: string;
   commitAfterTask: boolean;
   taskMode: TaskMode;
+  gitRepositoryPath: string | null;
+  gitRemoteUrl: string;
+  gitBranchMode: GitBranchMode;
+  gitBranchName: string;
 };
 
 export type TeamRolePrompts = {
@@ -585,6 +590,10 @@ function createDefaultRunConfig(config: ViewcodexConfig): ProjectRunConfig {
     skill: '',
     commitAfterTask: config.commitAfterTask,
     taskMode: 'standard',
+    gitRepositoryPath: null,
+    gitRemoteUrl: '',
+    gitBranchMode: 'current',
+    gitBranchName: 'viewcodex-task',
   };
 }
 

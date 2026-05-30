@@ -22,6 +22,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import 'xterm/css/xterm.css';
 import type {
   CodexRole,
+  GitBranchMode,
   GptConfigFile,
   ProjectRunConfig,
   SessionHandoffDoc,
@@ -53,6 +54,10 @@ const fallbackConfig: ViewcodexConfig = {
         skill: '',
         commitAfterTask: false,
         taskMode: 'standard',
+        gitRepositoryPath: null,
+        gitRemoteUrl: '',
+        gitBranchMode: 'current',
+        gitBranchName: 'viewcodex-task',
       },
     },
   ],
@@ -123,6 +128,12 @@ export function App() {
   );
   const [selectedTaskMode, setSelectedTaskMode] = useState<TaskMode>('standard');
   const [commitAfterTask, setCommitAfterTask] = useState(fallbackConfig.commitAfterTask);
+  const [gitRepositoryPath, setGitRepositoryPath] = useState(
+    fallbackConfig.projects[0]?.runConfig.gitRepositoryPath ?? '',
+  );
+  const [gitRemoteUrl, setGitRemoteUrl] = useState(fallbackConfig.projects[0]?.runConfig.gitRemoteUrl ?? '');
+  const [gitBranchMode, setGitBranchMode] = useState<GitBranchMode>('current');
+  const [gitBranchName, setGitBranchName] = useState('viewcodex-task');
   const [prompt, setPrompt] = useState('');
   const [newDocPath, setNewDocPath] = useState('docs/project-context.md');
   const [newDocRequired, setNewDocRequired] = useState(true);
@@ -375,6 +386,54 @@ export function App() {
     await updateProjectRunConfig({ taskMode });
   }
 
+  async function updateGitRepositoryPath(repositoryPath: string) {
+    setGitRepositoryPath(repositoryPath);
+    await updateProjectRunConfig({ gitRepositoryPath: repositoryPath.trim() || null });
+  }
+
+  async function updateGitRemoteUrl(remoteUrl: string) {
+    setGitRemoteUrl(remoteUrl);
+    await updateProjectRunConfig({ gitRemoteUrl: remoteUrl });
+  }
+
+  async function updateGitBranchMode(branchMode: GitBranchMode) {
+    setGitBranchMode(branchMode);
+    await updateProjectRunConfig({ gitBranchMode: branchMode });
+  }
+
+  async function updateGitBranchName(branchName: string) {
+    setGitBranchName(branchName);
+    await updateProjectRunConfig({ gitBranchName: branchName });
+  }
+
+  async function detectGitSettings() {
+    if (!selectedProject || !window.viewcodex) {
+      setError(!window.viewcodex ? '当前环境不是 Electron 窗口，无法检测 Git。' : '请先选择项目。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const detected = await window.viewcodex.detectGitConfig(selectedProject.path);
+      const nextGitBranchName = gitBranchName.trim() || `viewcodex/${Date.now()}`;
+      setGitRepositoryPath(detected.repositoryPath ?? '');
+      setGitRemoteUrl(detected.remoteUrl);
+      const nextConfig = await window.viewcodex.setProjectRunConfig(selectedProject.path, {
+        gitRepositoryPath: detected.repositoryPath,
+        gitRemoteUrl: detected.remoteUrl,
+        gitBranchName: nextGitBranchName,
+      });
+      setConfig(nextConfig);
+      setStatus(
+        detected.repositoryPath
+          ? `Git 已检测：${detected.currentBranch ?? 'detached'}${detected.remoteUrl ? '' : '，未配置 origin'}`
+          : '未检测到 Git 仓库',
+      );
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
   async function updateProjectRunConfig(runConfig: Partial<ProjectRunConfig>) {
     if (!selectedProject || !window.viewcodex) {
       return;
@@ -538,6 +597,10 @@ export function App() {
     setSelectedSkill(preferences.skill);
     setSelectedTaskMode(preferences.taskMode);
     setCommitAfterTask(preferences.commitAfterTask);
+    setGitRepositoryPath(preferences.gitRepositoryPath ?? '');
+    setGitRemoteUrl(preferences.gitRemoteUrl);
+    setGitBranchMode(preferences.gitBranchMode);
+    setGitBranchName(preferences.gitBranchName);
     setPrompt(preferences.promptDraft);
   }
 
@@ -1124,6 +1187,10 @@ export function App() {
       skill: role === 'solo' ? selectedSkill : '',
       prompt: promptOverride,
       commitAfterTask: role === 'solo' && commitAfterTask,
+      gitRepositoryPath: gitRepositoryPath.trim() || null,
+      gitRemoteUrl: gitRemoteUrl.trim(),
+      gitBranchMode,
+      gitBranchName: gitBranchName.trim(),
       role,
     });
     const startedAt = new Date();
@@ -1487,6 +1554,53 @@ export function App() {
               <GitCommitHorizontal size={16} />
               <span>每次任务完成后自动提交 Git</span>
             </label>
+            <div className="config-section">
+              <div className="panel-title-row">
+                <h2>Git</h2>
+                <div className="compact-actions">
+                  <button onClick={() => void detectGitSettings()}>
+                    <RefreshCw size={15} />
+                    检测
+                  </button>
+                </div>
+              </div>
+              <label className="field">
+                <span>仓库目录</span>
+                <input
+                  value={gitRepositoryPath}
+                  onChange={(event) => void updateGitRepositoryPath(event.target.value)}
+                  placeholder="Git repository root"
+                />
+              </label>
+              <label className="field">
+                <span>GitHub / Origin</span>
+                <input
+                  value={gitRemoteUrl}
+                  onChange={(event) => void updateGitRemoteUrl(event.target.value)}
+                  placeholder="https://github.com/user/repo.git"
+                />
+              </label>
+              <label className="field">
+                <span>分支策略</span>
+                <select
+                  value={gitBranchMode}
+                  onChange={(event) => void updateGitBranchMode(event.target.value as GitBranchMode)}
+                >
+                  <option value="current">沿用当前分支</option>
+                  <option value="new">启动前创建任务分支</option>
+                </select>
+              </label>
+              {gitBranchMode === 'new' ? (
+                <label className="field">
+                  <span>任务分支</span>
+                  <input
+                    value={gitBranchName}
+                    onChange={(event) => void updateGitBranchName(event.target.value)}
+                    placeholder="viewcodex/task"
+                  />
+                </label>
+              ) : null}
+            </div>
             <div className="config-shortcuts">
               <button onClick={() => setConfigDialog('gpt')}>
                 <TerminalSquare size={15} />
@@ -1932,6 +2046,10 @@ function getProjectPreferences(config: ViewcodexConfig, projectPath: string | nu
     skill: project?.runConfig.skill ?? '',
     commitAfterTask: project?.runConfig.commitAfterTask ?? config.commitAfterTask,
     taskMode: project?.runConfig.taskMode ?? 'standard',
+    gitRepositoryPath: project?.runConfig.gitRepositoryPath ?? null,
+    gitRemoteUrl: project?.runConfig.gitRemoteUrl ?? '',
+    gitBranchMode: project?.runConfig.gitBranchMode ?? 'current',
+    gitBranchName: project?.runConfig.gitBranchName ?? 'viewcodex-task',
     promptDraft: project?.promptDraft ?? '',
   };
 }

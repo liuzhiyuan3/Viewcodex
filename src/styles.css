@@ -405,6 +405,7 @@ button:disabled {
 .doc-create-row input,
 .doc-create-row select,
 .model-manage-row input,
+.field input,
 .field select,
 .prompt-memory-editor input {
   min-width: 0;
@@ -420,6 +421,7 @@ button:disabled {
 .doc-create-row input:focus,
 .doc-create-row select:focus,
 .model-manage-row input:focus,
+.field input:focus,
 .field select:focus,
 .prompt-memory-editor input:focus,
 .gpt-config-editor:focus,

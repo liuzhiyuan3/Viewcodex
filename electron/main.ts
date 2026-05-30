@@ -48,6 +48,10 @@ type TerminalStartOptions = {
   skill: string;
   prompt: string;
   commitAfterTask: boolean;
+  gitRepositoryPath: string | null;
+  gitRemoteUrl: string;
+  gitBranchMode: 'current' | 'new';
+  gitBranchName: string;
   role?: CodexRole;
 };
 
@@ -61,8 +65,15 @@ type TerminalRuntimeSession = {
   role: CodexRole;
   commitAfterTask: boolean;
   commitSkipReason?: string;
+  gitRepositoryPath: string | null;
   promptPreview: string;
   transcriptTail: string;
+};
+
+type DetectedGitConfig = {
+  repositoryPath: string | null;
+  remoteUrl: string;
+  currentBranch: string | null;
 };
 
 type StartupCheckResult = {
@@ -132,6 +143,10 @@ ipcMain.handle('project:set-prompt-draft', (_event, projectPath: string, promptD
 
 ipcMain.handle('project:set-run-config', (_event, projectPath: string, runConfig: Partial<ProjectRunConfig>) => {
   return setProjectRunConfig(projectPath, runConfig);
+});
+
+ipcMain.handle('git:detect', (_event, projectPath: string) => {
+  return detectGitConfig(projectPath);
 });
 
 ipcMain.handle('config:set-team-role-prompt', (_event, role: keyof TeamRolePrompts, prompt: string) => {
@@ -250,9 +265,13 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
 
   const sessionId = randomUUID();
   const prompt = buildCodexPrompt(options.skill, options.prompt);
+  const gitRepositoryPath = await resolveGitRepositoryPath(options.projectPath, options.gitRepositoryPath);
+  if (options.gitBranchMode === 'new') {
+    await prepareTaskBranch(gitRepositoryPath, options.gitBranchName);
+  }
   const commitReadiness =
     role === 'solo' && options.commitAfterTask
-      ? await getCommitReadiness(options.projectPath)
+      ? await getCommitReadiness(gitRepositoryPath ?? options.projectPath)
       : { ok: false, reason: '自动提交未启用' };
   const baseArgs = [
     '--cd',
@@ -287,6 +306,7 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     role,
     commitAfterTask: role === 'solo' && options.commitAfterTask && commitReadiness.ok,
     commitSkipReason: commitReadiness.ok ? undefined : commitReadiness.reason,
+    gitRepositoryPath,
     promptPreview: options.prompt.trim().slice(0, 4000),
     transcriptTail: '',
   });
@@ -308,7 +328,7 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
       });
     }
     if (metadata?.commitAfterTask) {
-      void commitProjectChanges(metadata.projectPath, sessionId, event.sender);
+      void commitProjectChanges(metadata.gitRepositoryPath ?? metadata.projectPath, sessionId, event.sender);
     } else if (metadata?.commitSkipReason && metadata.role === 'solo' && options.commitAfterTask) {
       event.sender.send('terminal:data', sessionId, `\r\n[Viewcodex] 跳过 Git 自动提交：${metadata.commitSkipReason}\r\n`);
     }
@@ -475,6 +495,61 @@ function formatRoleName(role: CodexRole): string {
   };
 
   return roleNames[role];
+}
+
+async function detectGitConfig(projectPath: string): Promise<DetectedGitConfig> {
+  const repositoryPath = await resolveGitRepositoryPath(projectPath, null);
+  if (!repositoryPath) {
+    return {
+      repositoryPath: null,
+      remoteUrl: '',
+      currentBranch: null,
+    };
+  }
+
+  const [remoteUrl, currentBranch] = await Promise.all([
+    execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: repositoryPath })
+      .then((result) => result.stdout.trim())
+      .catch(() => ''),
+    execFileAsync('git', ['branch', '--show-current'], { cwd: repositoryPath })
+      .then((result) => result.stdout.trim() || null)
+      .catch(() => null),
+  ]);
+
+  return {
+    repositoryPath,
+    remoteUrl,
+    currentBranch,
+  };
+}
+
+async function resolveGitRepositoryPath(projectPath: string, configuredPath: string | null): Promise<string | null> {
+  const candidate = configuredPath?.trim() || projectPath;
+  try {
+    const result = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: candidate });
+    return result.stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function prepareTaskBranch(repositoryPath: string | null, branchName: string): Promise<void> {
+  if (!repositoryPath) {
+    throw new Error('无法创建任务分支：未检测到 Git 仓库');
+  }
+
+  const normalizedBranchName = branchName.trim();
+  if (!normalizedBranchName) {
+    throw new Error('无法创建任务分支：分支名称为空');
+  }
+
+  const exists = await execFileAsync('git', ['rev-parse', '--verify', normalizedBranchName], { cwd: repositoryPath })
+    .then(() => true)
+    .catch(() => false);
+
+  await execFileAsync('git', exists ? ['switch', normalizedBranchName] : ['switch', '-c', normalizedBranchName], {
+    cwd: repositoryPath,
+  });
 }
 
 async function ensureConfiguredProject(projectPath: string): Promise<void> {

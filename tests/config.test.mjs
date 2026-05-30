@@ -131,6 +131,24 @@ test('adds and removes model options while preserving at least one model', async
   assert.ok(configAfterRemove.models.length > 0);
 });
 
+test('project run config persists git repository and branch strategy', async () => {
+  const projectPath = await createProject('git-config');
+  await configModule.upsertProject(projectPath);
+
+  const nextConfig = await configModule.setProjectRunConfig(projectPath, {
+    gitRepositoryPath: projectPath,
+    gitRemoteUrl: 'https://github.com/example/repo.git',
+    gitBranchMode: 'new',
+    gitBranchName: 'viewcodex/test-task',
+  });
+  const project = nextConfig.projects.find((entry) => entry.path === projectPath);
+
+  assert.equal(project?.runConfig.gitRepositoryPath, projectPath);
+  assert.equal(project?.runConfig.gitRemoteUrl, 'https://github.com/example/repo.git');
+  assert.equal(project?.runConfig.gitBranchMode, 'new');
+  assert.equal(project?.runConfig.gitBranchName, 'viewcodex/test-task');
+});
+
 test('adds updates and removes prompt memories', async () => {
   const configAfterAdd = await configModule.addPromptMemory('Review', '检查这个改动');
   const memory = configAfterAdd.promptMemories.find((entry) => entry.title === 'Review');

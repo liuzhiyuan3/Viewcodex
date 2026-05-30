@@ -4,6 +4,7 @@ export type StartupDocs = {
 };
 
 export type TaskMode = 'quick' | 'standard' | 'deep';
+export type GitBranchMode = 'current' | 'new';
 
 export type ProjectRunConfig = {
   model: string | null;
@@ -12,6 +13,16 @@ export type ProjectRunConfig = {
   skill: string;
   commitAfterTask: boolean;
   taskMode: TaskMode;
+  gitRepositoryPath: string | null;
+  gitRemoteUrl: string;
+  gitBranchMode: GitBranchMode;
+  gitBranchName: string;
+};
+
+export type DetectedGitConfig = {
+  repositoryPath: string | null;
+  remoteUrl: string;
+  currentBranch: string | null;
 };
 
 export type TeamRolePrompts = {
@@ -112,6 +123,10 @@ export type TerminalStartOptions = {
   skill: string;
   prompt: string;
   commitAfterTask: boolean;
+  gitRepositoryPath: string | null;
+  gitRemoteUrl: string;
+  gitBranchMode: GitBranchMode;
+  gitBranchName: string;
   role?: CodexRole;
 };
 
@@ -148,6 +163,7 @@ export type ViewcodexApi = {
     projectPath: string,
     runConfig: Partial<ProjectRunConfig>,
   ) => Promise<ViewcodexConfig>;
+  detectGitConfig: (projectPath: string) => Promise<DetectedGitConfig>;
   setTeamRolePrompt: (role: keyof TeamRolePrompts, prompt: string) => Promise<ViewcodexConfig>;
   selectStartupDocs: (projectPath: string, required: boolean) => Promise<ViewcodexConfig>;
   createStartupDoc: (projectPath: string, inputName: string, required: boolean) => Promise<ViewcodexConfig>;
