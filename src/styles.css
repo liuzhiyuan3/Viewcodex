@@ -1069,6 +1069,20 @@ button:disabled {
   resize: none;
 }
 
+.startup-confirm-dialog {
+  align-self: center;
+  justify-self: center;
+  width: min(760px, calc(100vw - 68px));
+  max-height: min(680px, calc(100vh - 68px));
+}
+
+.startup-confirm-body {
+  display: grid;
+  gap: 2px;
+  overflow: auto;
+  padding: 16px;
+}
+
 .terminal-header {
   display: flex;
   align-items: center;

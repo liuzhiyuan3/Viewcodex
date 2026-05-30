@@ -101,6 +101,13 @@ type ProjectStartupDocContext = StartupDocContextResult & {
   projectPath: string;
 };
 
+type StartupConfirmation = {
+  projectPath: string;
+  projectName: string;
+  check: StartupCheckResult;
+  previewContext: StartupDocContextResult;
+};
+
 type CodexSessionView = {
   id: string;
   command: string;
@@ -158,6 +165,7 @@ export function App() {
   const [selectedDocProjectPath, setSelectedDocProjectPath] = useState<string | null>(null);
   const [selectedDocContent, setSelectedDocContent] = useState('');
   const [readOnlyDoc, setReadOnlyDoc] = useState<{ title: string; subtitle: string; content: string } | null>(null);
+  const [startupConfirmation, setStartupConfirmation] = useState<StartupConfirmation | null>(null);
   const [savedDocContent, setSavedDocContent] = useState('');
   const [sessions, setSessions] = useState<CodexSessionView[]>([]);
   const [runningTerminals, setRunningTerminals] = useState<TerminalRuntimeSession[]>([]);
@@ -889,21 +897,54 @@ export function App() {
         return false;
       }
 
-      const docContext = await window.viewcodex.getStartupDocContext(selectedProject.path, selectedTaskMode, true);
+      const docContext = await window.viewcodex.getStartupDocContext(selectedProject.path, selectedTaskMode, false);
       setStartupDocContext({ ...docContext, projectPath: selectedProject.path });
+      setDocsResult(docContext.docs);
+      setStartupConfirmation({
+        projectPath: selectedProject.path,
+        projectName: selectedProject.name,
+        check,
+        previewContext: docContext,
+      });
+      setStatus('等待启动确认');
+      return false;
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+      return false;
+    } finally {
+      setProjectStarting(selectedProject.path, false);
+    }
+  }
+
+  async function confirmStartupRun(): Promise<boolean> {
+    if (!startupConfirmation || !window.viewcodex) {
+      return false;
+    }
+    const project = config.projects.find((entry) => entry.path === startupConfirmation.projectPath);
+    if (!project) {
+      setError('确认的项目已不存在');
+      return false;
+    }
+
+    try {
+      setError(null);
+      setProjectStarting(startupConfirmation.projectPath, true);
+      const docContext = await window.viewcodex.getStartupDocContext(startupConfirmation.projectPath, selectedTaskMode, true);
+      setStartupDocContext({ ...docContext, projectPath: startupConfirmation.projectPath });
       setSessionHandoff({ path: docContext.handoff?.path ?? '', exists: false, content: null, createdAt: null });
       setDocsResult(docContext.docs);
       const startupPrompt = composePromptWithStartupContext(prompt, docContext.context);
-      await startCodexTerminal(selectedProject, 'solo', startupPrompt);
+      await startCodexTerminal(project, 'solo', startupPrompt);
+      setStartupConfirmation(null);
       setStatus(
-        `已按${formatTaskMode(selectedTaskMode)}模式读取 ${check.docs.filter((doc) => doc.exists).length} 份启动文档，预计 ${estimateTokens(startupPrompt)} tokens。`,
+        `已按${formatTaskMode(selectedTaskMode)}模式读取 ${docContext.docs.filter((doc) => doc.exists).length} 份启动文档，预计 ${estimateTokens(startupPrompt)} tokens。`,
       );
       return true;
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
       return false;
     } finally {
-      setProjectStarting(selectedProject.path, false);
+      setProjectStarting(startupConfirmation.projectPath, false);
     }
   }
 
@@ -1929,6 +1970,62 @@ export function App() {
           </section>
         ) : null}
       </section>
+      {startupConfirmation ? (
+        <div className="doc-editor-overlay" role="dialog" aria-modal="true" aria-label="启动确认">
+          <section className="doc-editor startup-confirm-dialog">
+            <header className="doc-editor-header">
+              <div>
+                <h2>启动确认</h2>
+                <span>{startupConfirmation.projectName}</span>
+              </div>
+              <div className="doc-editor-actions">
+                <button onClick={() => setStartupConfirmation(null)}>
+                  <X size={15} />
+                  取消
+                </button>
+                <button onClick={() => void confirmStartupRun()}>
+                  <Play size={15} />
+                  启动
+                </button>
+              </div>
+            </header>
+            <div className="startup-confirm-body">
+              <div className="health-row">
+                <span className="result-ok">文档</span>
+                <strong>{startupConfirmation.previewContext.docs.filter((doc) => doc.exists).length} 份</strong>
+                <small>
+                  必读 {startupConfirmation.previewContext.docs.filter((doc) => doc.required && doc.exists).length} ·
+                  可选 {startupConfirmation.previewContext.docs.filter((doc) => !doc.required && doc.exists).length}
+                </small>
+              </div>
+              <div className="health-row">
+                <span className={startupConfirmation.previewContext.handoff?.exists ? 'result-ok' : 'result-error'}>
+                  交接
+                </span>
+                <strong>{startupConfirmation.previewContext.handoff?.exists ? '将读取' : '无'}</strong>
+                <small>确认启动后才会读取并删除交接记录</small>
+              </div>
+              <div className="health-row">
+                <span className="result-ok">模型</span>
+                <strong>{selectedModel}</strong>
+                <small>
+                  {formatTaskMode(selectedTaskMode)} · {formatContextLength(selectedContextLengthTokens)}
+                </small>
+              </div>
+              <div className="health-row">
+                <span className={selectedSkill ? 'result-ok' : 'result-error'}>Skill</span>
+                <strong>{selectedSkill || '不使用'}</strong>
+                <small>预计 {formatTokenCount(estimateTokens(composePromptWithStartupContext(prompt, startupConfirmation.previewContext.context)))} tokens</small>
+              </div>
+              <div className="health-row">
+                <span className={commitAfterTask ? 'result-ok' : 'result-error'}>Git</span>
+                <strong>{commitAfterTask ? '自动提交' : '不提交'}</strong>
+                <small>{pushAfterCommit ? '提交后 push' : gitBranchMode === 'new' ? `任务分支：${gitBranchName}` : '沿用当前分支'}</small>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {selectedDocPath ? (
         <div className="doc-editor-overlay" role="dialog" aria-modal="true" aria-label="编辑启动文档">
           <section className="doc-editor">
