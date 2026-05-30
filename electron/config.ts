@@ -38,6 +38,18 @@ export type PromptMemory = {
   updatedAt: string;
 };
 
+export type SessionHistoryEntry = {
+  id: string;
+  projectPath: string;
+  role: string;
+  model: string;
+  skill: string;
+  promptPreview: string;
+  startedAt: string;
+  endedAt: string;
+  exitCode: number | null;
+};
+
 export type ViewcodexProject = {
   name: string;
   path: string;
@@ -59,6 +71,7 @@ export type ViewcodexConfig = {
   commitAfterTask: boolean;
   teamRolePrompts: TeamRolePrompts;
   promptMemories: PromptMemory[];
+  sessionHistory: SessionHistoryEntry[];
   startupDocSummaryCache: StartupDocSummaryCache;
 };
 
@@ -123,6 +136,7 @@ const defaultConfig: ViewcodexConfig = {
   defaultSkill: null,
   commitAfterTask: false,
   promptMemories: [],
+  sessionHistory: [],
   startupDocSummaryCache: {},
   teamRolePrompts: {
     planner:
@@ -270,6 +284,15 @@ export async function updatePromptMemory(
 export async function removePromptMemory(id: string): Promise<ViewcodexConfig> {
   return updateConfig((config) => {
     config.promptMemories = config.promptMemories.filter((entry) => entry.id !== id);
+  });
+}
+
+export async function recordSessionHistory(entry: SessionHistoryEntry): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    config.sessionHistory = [
+      entry,
+      ...config.sessionHistory.filter((item) => item.id !== entry.id),
+    ].slice(0, 80);
   });
 }
 
@@ -531,6 +554,7 @@ function normalizeConfig(raw: Partial<ViewcodexConfig>): ViewcodexConfig {
       ...raw.teamRolePrompts,
     },
     promptMemories: Array.isArray(raw.promptMemories) ? raw.promptMemories.map(normalizePromptMemory) : [],
+    sessionHistory: Array.isArray(raw.sessionHistory) ? raw.sessionHistory.map(normalizeSessionHistoryEntry) : [],
     startupDocSummaryCache: raw.startupDocSummaryCache ?? {},
     projects,
     selectedProjectPath,
@@ -559,6 +583,20 @@ function normalizePromptMemory(memory: Partial<PromptMemory>): PromptMemory {
     title: memory.title?.trim() || '未命名 Prompt',
     content: memory.content ?? '',
     updatedAt: memory.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+function normalizeSessionHistoryEntry(entry: Partial<SessionHistoryEntry>): SessionHistoryEntry {
+  return {
+    id: entry.id || randomUUID(),
+    projectPath: entry.projectPath ?? '',
+    role: entry.role ?? 'solo',
+    model: entry.model ?? '',
+    skill: entry.skill ?? '',
+    promptPreview: entry.promptPreview ?? '',
+    startedAt: entry.startedAt ?? new Date().toISOString(),
+    endedAt: entry.endedAt ?? entry.startedAt ?? new Date().toISOString(),
+    exitCode: typeof entry.exitCode === 'number' ? entry.exitCode : null,
   };
 }
 

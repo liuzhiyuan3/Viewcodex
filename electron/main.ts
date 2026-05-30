@@ -14,6 +14,7 @@ import {
   getStartupDocContext,
   listAvailableSkills,
   loadConfig,
+  recordSessionHistory,
   readSessionHandoff,
   readStartupDocContent,
   readStartupDocs,
@@ -64,6 +65,8 @@ type TerminalRuntimeSession = {
   command: string;
   startedAt: string;
   role: CodexRole;
+  model: string;
+  skill: string;
   commitAfterTask: boolean;
   pushAfterCommit: boolean;
   commitSkipReason?: string;
@@ -89,6 +92,7 @@ type HealthCheckResult = {
   git: HealthCheckItem;
   gptConfig: HealthCheckItem;
   skills: HealthCheckItem;
+  path: HealthCheckItem;
 };
 
 type StartupCheckResult = {
@@ -324,6 +328,8 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     command,
     startedAt: new Date().toISOString(),
     role,
+    model: options.model,
+    skill: options.skill,
     commitAfterTask: role === 'solo' && options.commitAfterTask && commitReadiness.ok,
     pushAfterCommit: role === 'solo' && options.pushAfterCommit,
     commitSkipReason: commitReadiness.ok ? undefined : commitReadiness.reason,
@@ -343,6 +349,17 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     terminalMetadata.delete(sessionId);
     event.sender.send('terminal:exit', sessionId, exitCode);
     if (metadata) {
+      void recordSessionHistory({
+        id: sessionId,
+        projectPath: metadata.projectPath,
+        role: metadata.role,
+        model: metadata.model,
+        skill: metadata.skill,
+        promptPreview: metadata.promptPreview,
+        startedAt: metadata.startedAt,
+        endedAt: new Date().toISOString(),
+        exitCode,
+      });
       void writeSessionHandoff(metadata.projectPath, createSessionHandoff(metadata, exitCode)).catch((error) => {
         const message = error instanceof Error ? error.message : '未知错误';
         event.sender.send('terminal:data', sessionId, `\r\n[Viewcodex] 会话交接记录生成失败：${message}\r\n`);
@@ -377,6 +394,17 @@ ipcMain.handle('terminal:resize', (_event, sessionId: string, cols: number, rows
 ipcMain.handle('terminal:kill', (_event, sessionId: string) => {
   const metadata = terminalMetadata.get(sessionId);
   if (metadata) {
+    void recordSessionHistory({
+      id: sessionId,
+      projectPath: metadata.projectPath,
+      role: metadata.role,
+      model: metadata.model,
+      skill: metadata.skill,
+      promptPreview: metadata.promptPreview,
+      startedAt: metadata.startedAt,
+      endedAt: new Date().toISOString(),
+      exitCode: null,
+    });
     void writeSessionHandoff(metadata.projectPath, createSessionHandoff(metadata, null));
   }
   terminals.get(sessionId)?.kill();
@@ -583,7 +611,9 @@ async function ensureCodexAvailable(): Promise<void> {
     await execFileAsync('codex', ['--version']);
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
-    throw new Error(`无法启动 Codex CLI：未检测到可执行的 codex。请先在系统终端确认 codex --version 可用。原始错误：${message}`);
+    throw new Error(
+      `无法启动 Codex CLI：未检测到可执行的 codex。请先在系统终端确认 codex --version 可用。Electron PATH：${getRuntimePath()}。原始错误：${message}`,
+    );
   }
 }
 
@@ -620,6 +650,11 @@ async function checkHealth(): Promise<HealthCheckResult> {
     git,
     gptConfig,
     skills,
+    path: {
+      ok: true,
+      label: 'PATH',
+      detail: getRuntimePath(),
+    },
   };
 }
 
@@ -635,9 +670,13 @@ async function checkCommand(command: string, args: string[], label: string): Pro
     return {
       ok: false,
       label,
-      detail: error instanceof Error ? error.message : '不可用',
+      detail: `${error instanceof Error ? error.message : '不可用'}；PATH=${getRuntimePath()}`,
     };
   }
+}
+
+function getRuntimePath(): string {
+  return process.env.PATH || '(empty)';
 }
 
 async function ensureConfiguredProject(projectPath: string): Promise<void> {

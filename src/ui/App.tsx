@@ -73,6 +73,7 @@ const fallbackConfig: ViewcodexConfig = {
   defaultSkill: null,
   commitAfterTask: false,
   promptMemories: [],
+  sessionHistory: [],
   startupDocSummaryCache: {},
   teamRolePrompts: {
     planner:
@@ -210,6 +211,7 @@ export function App() {
         ),
       );
       void refreshRunningCodexProcesses();
+      void loadConfig();
       setStatus('Codex 会话已退出。');
     });
 
@@ -235,6 +237,9 @@ export function App() {
   const visibleSoloSessions = sessions.filter(
     (session) => session.projectPath === selectedProject?.path && session.role === 'solo',
   );
+  const sessionHistoryForProject = config.sessionHistory
+    .filter((entry) => entry.projectPath === selectedProject?.path)
+    .slice(0, 6);
   const docIsDirty = selectedDocPath !== null && selectedDocContent !== savedDocContent;
   const selectedDocProject =
     config.projects.find((project) => project.path === selectedDocProjectPath) ?? selectedProject;
@@ -332,8 +337,9 @@ export function App() {
       const result = await window.viewcodex.checkHealth();
       setHealthCheck(result);
       if (showStatus) {
-        const okCount = Object.values(result).filter((item) => item.ok).length;
-        setStatus(`环境体检：${okCount}/4`);
+        const items = Object.values(result);
+        const okCount = items.filter((item) => item.ok).length;
+        setStatus(`环境体检：${okCount}/${items.length}`);
       }
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
@@ -1796,6 +1802,22 @@ export function App() {
                       </small>
                     </span>
                   </button>
+                ))}
+              </div>
+            ) : null}
+            {sessionHistoryForProject.length > 0 ? (
+              <div className="session-list history-list">
+                {sessionHistoryForProject.map((entry) => (
+                  <div className="session-row history-row" key={entry.id}>
+                    <span className="status-dot exited" />
+                    <span>
+                      <strong>{entry.skill || entry.model || formatRoleName(entry.role as CodexRole)}</strong>
+                      <small>
+                        {formatRoleName(entry.role as CodexRole)} · 退出码 {entry.exitCode ?? 'unknown'} ·{' '}
+                        {formatDateTime(entry.endedAt)}
+                      </small>
+                    </span>
+                  </div>
                 ))}
               </div>
             ) : null}

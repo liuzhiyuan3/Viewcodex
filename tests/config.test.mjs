@@ -169,6 +169,37 @@ test('project run config persists git repository and branch strategy', async () 
   assert.equal(project?.runConfig.gitBranchName, 'viewcodex/test-task');
 });
 
+test('records recent session history with newest entries first', async () => {
+  const projectPath = await createProject('session-history');
+  await configModule.upsertProject(projectPath);
+
+  await configModule.recordSessionHistory({
+    id: 'old-session',
+    projectPath,
+    role: 'solo',
+    model: 'gpt-test',
+    skill: '',
+    promptPreview: 'old',
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: '2026-01-01T00:01:00.000Z',
+    exitCode: 0,
+  });
+  const nextConfig = await configModule.recordSessionHistory({
+    id: 'new-session',
+    projectPath,
+    role: 'solo',
+    model: 'gpt-test',
+    skill: 'review',
+    promptPreview: 'new',
+    startedAt: '2026-01-01T00:02:00.000Z',
+    endedAt: '2026-01-01T00:03:00.000Z',
+    exitCode: 1,
+  });
+
+  assert.equal(nextConfig.sessionHistory[0].id, 'new-session');
+  assert.equal(nextConfig.sessionHistory[1].id, 'old-session');
+});
+
 test('lists skills from CODEX_HOME and default codex home without stale cache', async () => {
   const codexHome = path.join(tempRoot, 'custom-codex-home');
   process.env.CODEX_HOME = codexHome;

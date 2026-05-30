@@ -696,6 +696,15 @@ button:disabled {
   background: var(--accent-soft);
 }
 
+.history-list {
+  max-height: 118px;
+  overflow: auto;
+}
+
+.history-row {
+  cursor: default;
+}
+
 .session-row strong {
   display: block;
   font-size: 13px;
@@ -1233,10 +1242,15 @@ button:disabled {
 
 .docs-view,
 .config-view {
-  max-width: 980px;
+  width: 100%;
+  min-width: 0;
 }
 
 .config-view {
   overflow: auto;
   padding-right: 8px;
+}
+
+.docs-view {
+  overflow: auto;
 }

@@ -37,6 +37,7 @@ export type HealthCheckResult = {
   git: HealthCheckItem;
   gptConfig: HealthCheckItem;
   skills: HealthCheckItem;
+  path: HealthCheckItem;
 };
 
 export type TeamRolePrompts = {
@@ -50,6 +51,18 @@ export type PromptMemory = {
   title: string;
   content: string;
   updatedAt: string;
+};
+
+export type SessionHistoryEntry = {
+  id: string;
+  projectPath: string;
+  role: string;
+  model: string;
+  skill: string;
+  promptPreview: string;
+  startedAt: string;
+  endedAt: string;
+  exitCode: number | null;
 };
 
 export type GptConfigFile = {
@@ -91,6 +104,7 @@ export type ViewcodexConfig = {
   commitAfterTask: boolean;
   teamRolePrompts: TeamRolePrompts;
   promptMemories: PromptMemory[];
+  sessionHistory: SessionHistoryEntry[];
   startupDocSummaryCache: StartupDocSummaryCache;
 };
 
