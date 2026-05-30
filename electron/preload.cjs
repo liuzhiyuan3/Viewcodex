@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('viewcodex', {
   readSessionHandoff: (projectPath) => ipcRenderer.invoke('handoff:read', projectPath),
   checkStartup: (projectPath) => ipcRenderer.invoke('startup:check', projectPath),
   listTerminals: () => ipcRenderer.invoke('terminal:list'),
+  clearSessionHistory: (projectPath) => ipcRenderer.invoke('session-history:clear', projectPath),
   startTerminal: (options) => ipcRenderer.invoke('terminal:start', options),
   writeTerminal: (sessionId, data) => ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminal: (sessionId, cols, rows) => ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),

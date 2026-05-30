@@ -1009,6 +1009,21 @@ export function App() {
     });
   }
 
+  async function clearCurrentProjectSessionHistory() {
+    if (!selectedProject || !window.viewcodex) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.clearSessionHistory(selectedProject.path);
+      setConfig(nextConfig);
+      setStatus('会话历史已清空');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
   async function restartCodex() {
     if (!selectedProject || !window.viewcodex) {
       setError('请先在 Electron 窗口中选择项目。');
@@ -1847,20 +1862,31 @@ export function App() {
               </div>
             ) : null}
             {sessionHistoryForProject.length > 0 ? (
-              <div className="session-list history-list">
-                {sessionHistoryForProject.map((entry) => (
-                  <div className="session-row history-row" key={entry.id}>
-                    <span className="status-dot exited" />
-                    <span>
-                      <strong>{entry.skill || entry.model || formatRoleName(entry.role as CodexRole)}</strong>
-                      <small>
-                        {formatRoleName(entry.role as CodexRole)} · 退出码 {entry.exitCode ?? 'unknown'} ·{' '}
-                        {formatDateTime(entry.endedAt)}
-                      </small>
-                    </span>
+              <>
+                <div className="panel-title-row session-history-title">
+                  <h2>最近会话</h2>
+                  <div className="compact-actions">
+                    <button onClick={() => void clearCurrentProjectSessionHistory()}>
+                      <Eraser size={14} />
+                      清空
+                    </button>
                   </div>
-                ))}
-              </div>
+                </div>
+                <div className="session-list history-list">
+                  {sessionHistoryForProject.map((entry) => (
+                    <div className="session-row history-row" key={entry.id}>
+                      <span className="status-dot exited" />
+                      <span>
+                        <strong>{entry.skill || entry.model || formatRoleName(entry.role as CodexRole)}</strong>
+                        <small>
+                          {formatRoleName(entry.role as CodexRole)} · 退出码 {entry.exitCode ?? 'unknown'} ·{' '}
+                          {formatDateTime(entry.endedAt)}
+                        </small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : null}
             <section className="terminal-panel">
               <div className="terminal-header">

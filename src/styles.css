@@ -701,6 +701,14 @@ button:disabled {
   overflow: auto;
 }
 
+.session-history-title {
+  margin: 0;
+}
+
+.session-history-title h2 {
+  font-size: 13px;
+}
+
 .history-row {
   cursor: default;
 }

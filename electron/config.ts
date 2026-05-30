@@ -296,6 +296,14 @@ export async function recordSessionHistory(entry: SessionHistoryEntry): Promise<
   });
 }
 
+export async function clearSessionHistory(projectPath?: string): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    config.sessionHistory = projectPath
+      ? config.sessionHistory.filter((entry) => entry.projectPath !== projectPath)
+      : [];
+  });
+}
+
 export async function setProjectPromptDraft(projectPath: string, promptDraft: string): Promise<ViewcodexConfig> {
   return updateConfig((config) => {
     const project = findProject(config, projectPath);

@@ -10,6 +10,7 @@ import {
   addModel,
   addPromptMemory,
   addStartupDocs,
+  clearSessionHistory,
   createStartupDoc,
   getStartupDocContext,
   listAvailableSkills,
@@ -273,6 +274,10 @@ ipcMain.handle('startup:check', async (_event, projectPath: string): Promise<Sta
 
 ipcMain.handle('terminal:list', () => {
   return Array.from(terminalMetadata.values()).filter((session) => terminals.has(session.id));
+});
+
+ipcMain.handle('session-history:clear', (_event, projectPath?: string) => {
+  return clearSessionHistory(projectPath);
 });
 
 ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) => {

@@ -198,6 +198,9 @@ test('records recent session history with newest entries first', async () => {
 
   assert.equal(nextConfig.sessionHistory[0].id, 'new-session');
   assert.equal(nextConfig.sessionHistory[1].id, 'old-session');
+
+  const clearedConfig = await configModule.clearSessionHistory(projectPath);
+  assert.equal(clearedConfig.sessionHistory.some((entry) => entry.projectPath === projectPath), false);
 });
 
 test('lists skills from CODEX_HOME and default codex home without stale cache', async () => {

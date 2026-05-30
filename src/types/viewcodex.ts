@@ -215,6 +215,7 @@ export type ViewcodexApi = {
   readSessionHandoff: (projectPath: string) => Promise<SessionHandoffDoc>;
   checkStartup: (projectPath: string) => Promise<StartupCheckResult>;
   listTerminals: () => Promise<TerminalRuntimeSession[]>;
+  clearSessionHistory: (projectPath?: string) => Promise<ViewcodexConfig>;
   startTerminal: (options: TerminalStartOptions) => Promise<TerminalSession>;
   writeTerminal: (sessionId: string, data: string) => Promise<void>;
   resizeTerminal: (sessionId: string, cols: number, rows: number) => Promise<void>;
