@@ -23,6 +23,7 @@ import {
   removePromptMemory,
   removeStartupDoc,
   selectExistingProject,
+  setCodexCliPath,
   setCommitAfterTask,
   setProjectPromptDraft,
   setProjectRunConfig,
@@ -127,6 +128,10 @@ ipcMain.handle('project:set-selected', (_event, projectPath: string) => {
 
 ipcMain.handle('config:set-commit-after-task', (_event, commitAfterTask: boolean) => {
   return setCommitAfterTask(commitAfterTask);
+});
+
+ipcMain.handle('config:set-codex-cli-path', (_event, codexCliPath: string) => {
+  return setCodexCliPath(codexCliPath);
 });
 
 ipcMain.handle('config:add-model', (_event, model: string) => {
@@ -249,10 +254,11 @@ ipcMain.handle('startup:check', async (_event, projectPath: string): Promise<Sta
   }
 
   try {
-    await execFileAsync('codex', ['--version']);
+    const config = await loadConfig();
+    await execFileAsync(config.codexCliPath, ['--version']);
   } catch {
     codexAvailable = false;
-    errors.push('当前环境无法执行 codex 命令');
+    errors.push('当前环境无法执行 Codex CLI');
   }
 
   if (projectExists) {
@@ -317,8 +323,9 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     args.push(prompt);
   }
 
-  const command = ['codex', ...baseArgs, prompt ? '<prompt>' : ''].filter(Boolean).join(' ');
-  const terminal = spawn('codex', args, {
+  const config = await loadConfig();
+  const command = [config.codexCliPath, ...baseArgs, prompt ? '<prompt>' : ''].filter(Boolean).join(' ');
+  const terminal = spawn(config.codexCliPath, args, {
     name: 'xterm-256color',
     cols: 96,
     rows: 28,
@@ -613,18 +620,19 @@ async function prepareTaskBranch(repositoryPath: string | null, branchName: stri
 
 async function ensureCodexAvailable(): Promise<void> {
   try {
-    await execFileAsync('codex', ['--version']);
+    const config = await loadConfig();
+    await execFileAsync(config.codexCliPath, ['--version']);
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     throw new Error(
-      `无法启动 Codex CLI：未检测到可执行的 codex。请先在系统终端确认 codex --version 可用。Electron PATH：${getRuntimePath()}。原始错误：${message}`,
+      `无法启动 Codex CLI：未检测到可执行的 Codex 命令。请检查配置页的 Codex CLI 路径，或在系统终端确认 codex --version 可用。Electron PATH：${getRuntimePath()}。原始错误：${message}`,
     );
   }
 }
 
 async function checkHealth(): Promise<HealthCheckResult> {
   const [codex, git, gptConfig, skills] = await Promise.all([
-    checkCommand('codex', ['--version'], 'Codex CLI'),
+    loadConfig().then((config) => checkCommand(config.codexCliPath, ['--version'], 'Codex CLI')),
     checkCommand('git', ['--version'], 'Git'),
     readGptConfigFile()
       .then((file) => ({

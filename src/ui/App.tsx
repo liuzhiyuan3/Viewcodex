@@ -71,6 +71,7 @@ const fallbackConfig: ViewcodexConfig = {
   defaultReasoningEffort: 'medium',
   defaultContextLengthTokens: 200_000,
   defaultSkill: null,
+  codexCliPath: 'codex',
   commitAfterTask: false,
   promptMemories: [],
   sessionHistory: [],
@@ -137,6 +138,7 @@ export function App() {
     fallbackConfig.defaultContextLengthTokens,
   );
   const [selectedTaskMode, setSelectedTaskMode] = useState<TaskMode>('standard');
+  const [codexCliPath, setCodexCliPath] = useState(fallbackConfig.codexCliPath);
   const [commitAfterTask, setCommitAfterTask] = useState(fallbackConfig.commitAfterTask);
   const [pushAfterCommit, setPushAfterCommit] = useState(false);
   const [gitRepositoryPath, setGitRepositoryPath] = useState(
@@ -307,6 +309,7 @@ export function App() {
       setConfig(nextConfig);
       setGptConfigFile(nextGptConfig);
       setGptConfigDraft(nextGptConfig.content);
+      setCodexCliPath(nextConfig.codexCliPath);
       setTeamRolePromptDrafts(nextConfig.teamRolePrompts);
       await refreshAvailableSkills(false);
       await runHealthCheck(false);
@@ -457,6 +460,20 @@ export function App() {
   async function updateSelectedTaskMode(taskMode: TaskMode) {
     setSelectedTaskMode(taskMode);
     await updateProjectRunConfig({ taskMode });
+  }
+
+  async function updateCodexCliPath(nextPath: string) {
+    setCodexCliPath(nextPath);
+    if (!window.viewcodex) {
+      return;
+    }
+
+    try {
+      const nextConfig = await window.viewcodex.setCodexCliPath(nextPath);
+      setConfig(nextConfig);
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
   }
 
   async function updateGitRepositoryPath(repositoryPath: string) {
@@ -1655,6 +1672,14 @@ export function App() {
                   <option key={model}>{model}</option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              <span>Codex CLI</span>
+              <input
+                value={codexCliPath}
+                onChange={(event) => void updateCodexCliPath(event.target.value)}
+                placeholder="codex 或 /usr/local/bin/codex"
+              />
             </label>
             <div className="model-manage-row">
               <input

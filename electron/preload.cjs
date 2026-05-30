@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('viewcodex', {
   setSelectedProject: (projectPath) => ipcRenderer.invoke('project:set-selected', projectPath),
   setCommitAfterTask: (commitAfterTask) =>
     ipcRenderer.invoke('config:set-commit-after-task', commitAfterTask),
+  setCodexCliPath: (codexCliPath) => ipcRenderer.invoke('config:set-codex-cli-path', codexCliPath),
   addModel: (model) => ipcRenderer.invoke('config:add-model', model),
   removeModel: (model) => ipcRenderer.invoke('config:remove-model', model),
   addPromptMemory: (title, content) => ipcRenderer.invoke('config:add-prompt-memory', title, content),

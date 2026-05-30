@@ -151,6 +151,14 @@ test('adds and removes model options while preserving at least one model', async
   assert.ok(configAfterRemove.models.length > 0);
 });
 
+test('stores codex cli path with codex fallback', async () => {
+  const configWithPath = await configModule.setCodexCliPath('/opt/bin/codex');
+  assert.equal(configWithPath.codexCliPath, '/opt/bin/codex');
+
+  const configWithFallback = await configModule.setCodexCliPath('  ');
+  assert.equal(configWithFallback.codexCliPath, 'codex');
+});
+
 test('project run config persists git repository and branch strategy', async () => {
   const projectPath = await createProject('git-config');
   await configModule.upsertProject(projectPath);

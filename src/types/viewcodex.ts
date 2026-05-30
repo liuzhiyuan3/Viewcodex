@@ -101,6 +101,7 @@ export type ViewcodexConfig = {
   defaultReasoningEffort: string;
   defaultContextLengthTokens: number;
   defaultSkill: string | null;
+  codexCliPath: string;
   commitAfterTask: boolean;
   teamRolePrompts: TeamRolePrompts;
   promptMemories: PromptMemory[];
@@ -181,6 +182,7 @@ export type ViewcodexApi = {
   selectProject: () => Promise<ViewcodexConfig>;
   setSelectedProject: (projectPath: string) => Promise<ViewcodexConfig>;
   setCommitAfterTask: (commitAfterTask: boolean) => Promise<ViewcodexConfig>;
+  setCodexCliPath: (codexCliPath: string) => Promise<ViewcodexConfig>;
   addModel: (model: string) => Promise<ViewcodexConfig>;
   removeModel: (model: string) => Promise<ViewcodexConfig>;
   addPromptMemory: (title: string, content: string) => Promise<ViewcodexConfig>;

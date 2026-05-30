@@ -68,6 +68,7 @@ export type ViewcodexConfig = {
   defaultReasoningEffort: string;
   defaultContextLengthTokens: number;
   defaultSkill: string | null;
+  codexCliPath: string;
   commitAfterTask: boolean;
   teamRolePrompts: TeamRolePrompts;
   promptMemories: PromptMemory[];
@@ -134,6 +135,7 @@ const defaultConfig: ViewcodexConfig = {
   defaultReasoningEffort: 'medium',
   defaultContextLengthTokens: 200_000,
   defaultSkill: null,
+  codexCliPath: 'codex',
   commitAfterTask: false,
   promptMemories: [],
   sessionHistory: [],
@@ -200,6 +202,12 @@ export async function setCommitAfterTask(commitAfterTask: boolean): Promise<View
   const config = await loadConfig();
   config.commitAfterTask = commitAfterTask;
   return saveConfig(config);
+}
+
+export async function setCodexCliPath(codexCliPath: string): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    config.codexCliPath = normalizeCodexCliPath(codexCliPath);
+  });
 }
 
 export async function addModel(model: string): Promise<ViewcodexConfig> {
@@ -557,6 +565,7 @@ function normalizeConfig(raw: Partial<ViewcodexConfig>): ViewcodexConfig {
     defaultReasoningEffort: raw.defaultReasoningEffort ?? defaultConfig.defaultReasoningEffort,
     defaultContextLengthTokens:
       raw.defaultContextLengthTokens ?? defaultConfig.defaultContextLengthTokens,
+    codexCliPath: normalizeCodexCliPath(raw.codexCliPath ?? defaultConfig.codexCliPath),
     teamRolePrompts: {
       ...defaultConfig.teamRolePrompts,
       ...raw.teamRolePrompts,
@@ -623,6 +632,10 @@ function normalizeModelName(model: string): string {
   }
 
   return normalizedModel;
+}
+
+function normalizeCodexCliPath(codexCliPath: string): string {
+  return codexCliPath.trim() || 'codex';
 }
 
 async function updateConfig(mutator: (config: ViewcodexConfig) => void): Promise<ViewcodexConfig> {
