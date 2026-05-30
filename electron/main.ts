@@ -76,6 +76,19 @@ type DetectedGitConfig = {
   currentBranch: string | null;
 };
 
+type HealthCheckItem = {
+  ok: boolean;
+  label: string;
+  detail: string;
+};
+
+type HealthCheckResult = {
+  codex: HealthCheckItem;
+  git: HealthCheckItem;
+  gptConfig: HealthCheckItem;
+  skills: HealthCheckItem;
+};
+
 type StartupCheckResult = {
   projectExists: boolean;
   codexAvailable: boolean;
@@ -147,6 +160,10 @@ ipcMain.handle('project:set-run-config', (_event, projectPath: string, runConfig
 
 ipcMain.handle('git:detect', (_event, projectPath: string) => {
   return detectGitConfig(projectPath);
+});
+
+ipcMain.handle('health:check', () => {
+  return checkHealth();
 });
 
 ipcMain.handle('config:set-team-role-prompt', (_event, role: keyof TeamRolePrompts, prompt: string) => {
@@ -550,6 +567,59 @@ async function prepareTaskBranch(repositoryPath: string | null, branchName: stri
   await execFileAsync('git', exists ? ['switch', normalizedBranchName] : ['switch', '-c', normalizedBranchName], {
     cwd: repositoryPath,
   });
+}
+
+async function checkHealth(): Promise<HealthCheckResult> {
+  const [codex, git, gptConfig, skills] = await Promise.all([
+    checkCommand('codex', ['--version'], 'Codex CLI'),
+    checkCommand('git', ['--version'], 'Git'),
+    readGptConfigFile()
+      .then((file) => ({
+        ok: file.exists,
+        label: 'GPT 配置',
+        detail: file.exists ? file.path : '未找到 ~/.codex/config.toml',
+      }))
+      .catch((error) => ({
+        ok: false,
+        label: 'GPT 配置',
+        detail: error instanceof Error ? error.message : '无法读取 GPT 配置',
+      })),
+    listAvailableSkills()
+      .then((items) => ({
+        ok: items.length > 0,
+        label: 'Skills',
+        detail: items.length > 0 ? `${items.length} 个可用 skill` : '未发现本机 skills',
+      }))
+      .catch((error) => ({
+        ok: false,
+        label: 'Skills',
+        detail: error instanceof Error ? error.message : '无法扫描 skills',
+      })),
+  ]);
+
+  return {
+    codex,
+    git,
+    gptConfig,
+    skills,
+  };
+}
+
+async function checkCommand(command: string, args: string[], label: string): Promise<HealthCheckItem> {
+  try {
+    const result = await execFileAsync(command, args);
+    return {
+      ok: true,
+      label,
+      detail: result.stdout.trim() || '可用',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      label,
+      detail: error instanceof Error ? error.message : '不可用',
+    };
+  }
 }
 
 async function ensureConfiguredProject(projectPath: string): Promise<void> {

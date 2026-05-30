@@ -24,6 +24,7 @@ import type {
   CodexRole,
   GitBranchMode,
   GptConfigFile,
+  HealthCheckResult,
   ProjectRunConfig,
   SessionHandoffDoc,
   SkillOption,
@@ -134,6 +135,7 @@ export function App() {
   const [gitRemoteUrl, setGitRemoteUrl] = useState(fallbackConfig.projects[0]?.runConfig.gitRemoteUrl ?? '');
   const [gitBranchMode, setGitBranchMode] = useState<GitBranchMode>('current');
   const [gitBranchName, setGitBranchName] = useState('viewcodex-task');
+  const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(null);
   const [prompt, setPrompt] = useState('');
   const [newDocPath, setNewDocPath] = useState('docs/project-context.md');
   const [newDocRequired, setNewDocRequired] = useState(true);
@@ -288,6 +290,7 @@ export function App() {
       setGptConfigDraft(nextGptConfig.content);
       setTeamRolePromptDrafts(nextConfig.teamRolePrompts);
       await refreshAvailableSkills(false);
+      await runHealthCheck(false);
       applyRememberedProjectState(nextConfig, nextConfig.selectedProjectPath);
       await refreshRunningCodexProcesses();
       await refreshSessionHandoff(nextConfig.selectedProjectPath);
@@ -308,6 +311,23 @@ export function App() {
       setAvailableSkills(nextSkills.length > 0 ? nextSkills : fallbackSkills);
       if (showStatus) {
         setStatus(`Skills 已刷新：${nextSkills.length}`);
+      }
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function runHealthCheck(showStatus = true) {
+    if (!window.viewcodex) {
+      return;
+    }
+
+    try {
+      const result = await window.viewcodex.checkHealth();
+      setHealthCheck(result);
+      if (showStatus) {
+        const okCount = Object.values(result).filter((item) => item.ok).length;
+        setStatus(`环境体检：${okCount}/4`);
       }
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
@@ -1514,7 +1534,28 @@ export function App() {
 
         {activeView === 'config' ? (
           <section className="workspace-view config-view">
-            <h2>运行配置</h2>
+            <div className="panel-title-row">
+              <h2>运行配置</h2>
+              <div className="compact-actions">
+                <button onClick={() => void runHealthCheck()}>
+                  <RefreshCw size={15} />
+                  体检
+                </button>
+              </div>
+            </div>
+            <div className="health-list">
+              {healthCheck ? (
+                Object.values(healthCheck).map((item) => (
+                  <div className="health-row" key={item.label}>
+                    <span className={item.ok ? 'result-ok' : 'result-error'}>{item.ok ? '正常' : '缺失'}</span>
+                    <strong>{item.label}</strong>
+                    <small>{item.detail}</small>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-text">暂无体检</p>
+              )}
+            </div>
             <label className="field">
               <span>模型</span>
               <select value={selectedModel} onChange={(event) => void updateSelectedModel(event.target.value)}>

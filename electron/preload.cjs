@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('viewcodex', {
   setProjectRunConfig: (projectPath, runConfig) =>
     ipcRenderer.invoke('project:set-run-config', projectPath, runConfig),
   detectGitConfig: (projectPath) => ipcRenderer.invoke('git:detect', projectPath),
+  checkHealth: () => ipcRenderer.invoke('health:check'),
   setTeamRolePrompt: (role, prompt) => ipcRenderer.invoke('config:set-team-role-prompt', role, prompt),
   selectStartupDocs: (projectPath, required) => ipcRenderer.invoke('docs:select', projectPath, required),
   createStartupDoc: (projectPath, inputName, required) =>

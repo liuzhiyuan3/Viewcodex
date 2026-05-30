@@ -25,6 +25,19 @@ export type DetectedGitConfig = {
   currentBranch: string | null;
 };
 
+export type HealthCheckItem = {
+  ok: boolean;
+  label: string;
+  detail: string;
+};
+
+export type HealthCheckResult = {
+  codex: HealthCheckItem;
+  git: HealthCheckItem;
+  gptConfig: HealthCheckItem;
+  skills: HealthCheckItem;
+};
+
 export type TeamRolePrompts = {
   planner: string;
   executor: string;
@@ -164,6 +177,7 @@ export type ViewcodexApi = {
     runConfig: Partial<ProjectRunConfig>,
   ) => Promise<ViewcodexConfig>;
   detectGitConfig: (projectPath: string) => Promise<DetectedGitConfig>;
+  checkHealth: () => Promise<HealthCheckResult>;
   setTeamRolePrompt: (role: keyof TeamRolePrompts, prompt: string) => Promise<ViewcodexConfig>;
   selectStartupDocs: (projectPath: string, required: boolean) => Promise<ViewcodexConfig>;
   createStartupDoc: (projectPath: string, inputName: string, required: boolean) => Promise<ViewcodexConfig>;

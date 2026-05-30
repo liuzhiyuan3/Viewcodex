@@ -1184,6 +1184,28 @@ button:disabled {
   color: var(--muted);
 }
 
+.health-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: 64px 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.health-row small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .result-ok,
 .result-error {
   border-radius: 999px;
