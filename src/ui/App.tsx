@@ -54,6 +54,7 @@ const fallbackConfig: ViewcodexConfig = {
         contextLengthTokens: 200_000,
         skill: '',
         commitAfterTask: false,
+        pushAfterCommit: false,
         taskMode: 'standard',
         gitRepositoryPath: null,
         gitRemoteUrl: '',
@@ -129,12 +130,14 @@ export function App() {
   );
   const [selectedTaskMode, setSelectedTaskMode] = useState<TaskMode>('standard');
   const [commitAfterTask, setCommitAfterTask] = useState(fallbackConfig.commitAfterTask);
+  const [pushAfterCommit, setPushAfterCommit] = useState(false);
   const [gitRepositoryPath, setGitRepositoryPath] = useState(
     fallbackConfig.projects[0]?.runConfig.gitRepositoryPath ?? '',
   );
   const [gitRemoteUrl, setGitRemoteUrl] = useState(fallbackConfig.projects[0]?.runConfig.gitRemoteUrl ?? '');
   const [gitBranchMode, setGitBranchMode] = useState<GitBranchMode>('current');
   const [gitBranchName, setGitBranchName] = useState('viewcodex-task');
+  const [gitCurrentBranch, setGitCurrentBranch] = useState<string | null>(null);
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(null);
   const [prompt, setPrompt] = useState('');
   const [newDocPath, setNewDocPath] = useState('docs/project-context.md');
@@ -229,6 +232,9 @@ export function App() {
     sessions.find((session) => session.id === activeSessionId && session.role === 'solo') ??
     sessions.find((session) => session.projectPath === selectedProject?.path && session.role === 'solo') ??
     null;
+  const visibleSoloSessions = sessions.filter(
+    (session) => session.projectPath === selectedProject?.path && session.role === 'solo',
+  );
   const docIsDirty = selectedDocPath !== null && selectedDocContent !== savedDocContent;
   const selectedDocProject =
     config.projects.find((project) => project.path === selectedDocProjectPath) ?? selectedProject;
@@ -389,6 +395,9 @@ export function App() {
 
   async function updateCommitAfterTask(nextValue: boolean) {
     setCommitAfterTask(nextValue);
+    if (!nextValue) {
+      setPushAfterCommit(false);
+    }
 
     if (!selectedProject || !window.viewcodex) {
       return;
@@ -398,11 +407,17 @@ export function App() {
       await window.viewcodex.setCommitAfterTask(nextValue);
       const nextConfig = await window.viewcodex.setProjectRunConfig(selectedProject.path, {
         commitAfterTask: nextValue,
+        pushAfterCommit: nextValue ? pushAfterCommit : false,
       });
       setConfig(nextConfig);
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
     }
+  }
+
+  async function updatePushAfterCommit(nextValue: boolean) {
+    setPushAfterCommit(nextValue);
+    await updateProjectRunConfig({ pushAfterCommit: nextValue });
   }
 
   async function updateSelectedModel(model: string) {
@@ -462,6 +477,7 @@ export function App() {
       const nextGitBranchName = gitBranchName.trim() || `viewcodex/${Date.now()}`;
       setGitRepositoryPath(detected.repositoryPath ?? '');
       setGitRemoteUrl(detected.remoteUrl);
+      setGitCurrentBranch(detected.currentBranch);
       const nextConfig = await window.viewcodex.setProjectRunConfig(selectedProject.path, {
         gitRepositoryPath: detected.repositoryPath,
         gitRemoteUrl: detected.remoteUrl,
@@ -476,6 +492,17 @@ export function App() {
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
     }
+  }
+
+  async function copyRemoteCommand() {
+    const remoteUrl = gitRemoteUrl.trim();
+    if (!remoteUrl) {
+      setStatus('Origin 为空');
+      return;
+    }
+
+    await navigator.clipboard.writeText(`git remote add origin ${remoteUrl}`);
+    setStatus('已复制 remote 命令');
   }
 
   async function updateProjectRunConfig(runConfig: Partial<ProjectRunConfig>) {
@@ -641,6 +668,7 @@ export function App() {
     setSelectedSkill(preferences.skill);
     setSelectedTaskMode(preferences.taskMode);
     setCommitAfterTask(preferences.commitAfterTask);
+    setPushAfterCommit(preferences.pushAfterCommit);
     setGitRepositoryPath(preferences.gitRepositoryPath ?? '');
     setGitRemoteUrl(preferences.gitRemoteUrl);
     setGitBranchMode(preferences.gitBranchMode);
@@ -1231,6 +1259,7 @@ export function App() {
       skill: role === 'solo' ? selectedSkill : '',
       prompt: promptOverride,
       commitAfterTask: role === 'solo' && commitAfterTask,
+      pushAfterCommit: role === 'solo' && pushAfterCommit,
       gitRepositoryPath: gitRepositoryPath.trim() || null,
       gitRemoteUrl: gitRemoteUrl.trim(),
       gitBranchMode,
@@ -1247,6 +1276,7 @@ export function App() {
         startedAt: startedAt.toISOString(),
         role,
         commitAfterTask: role === 'solo' && commitAfterTask,
+        pushAfterCommit: role === 'solo' && pushAfterCommit,
       },
     ]);
     setRunningProjectPaths((current) => new Set([...current, project.path]));
@@ -1619,10 +1649,24 @@ export function App() {
               <GitCommitHorizontal size={16} />
               <span>每次任务完成后自动提交 Git</span>
             </label>
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                checked={pushAfterCommit}
+                disabled={!commitAfterTask}
+                onChange={(event) => void updatePushAfterCommit(event.target.checked)}
+              />
+              <GitCommitHorizontal size={16} />
+              <span>自动提交后 push</span>
+            </label>
             <div className="config-section">
               <div className="panel-title-row">
                 <h2>Git</h2>
                 <div className="compact-actions">
+                  <button disabled={!gitRemoteUrl.trim()} onClick={() => void copyRemoteCommand()}>
+                    <GitCommitHorizontal size={15} />
+                    复制 remote
+                  </button>
                   <button onClick={() => void detectGitSettings()}>
                     <RefreshCw size={15} />
                     检测
@@ -1637,6 +1681,7 @@ export function App() {
                   placeholder="Git repository root"
                 />
               </label>
+              <p className="config-path">{gitCurrentBranch ? `当前分支：${gitCurrentBranch}` : '当前分支：未检测'}</p>
               <label className="field">
                 <span>GitHub / Origin</span>
                 <input
@@ -1735,6 +1780,25 @@ export function App() {
                 onChange={(event) => setPrompt(event.target.value)}
               />
             </div>
+            {visibleSoloSessions.length > 0 ? (
+              <div className="session-list">
+                {visibleSoloSessions.map((session) => (
+                  <button
+                    className={`session-row ${session.id === activeSessionId ? 'active' : ''}`}
+                    key={session.id}
+                    onClick={() => setActiveSessionId(session.id)}
+                  >
+                    <span className={`status-dot ${session.status === 'running' ? 'running' : 'exited'}`} />
+                    <span>
+                      <strong>{session.skill || session.model}</strong>
+                      <small>
+                        {session.status === 'running' ? '运行中' : `已退出 ${session.exitCode ?? ''}`} · {session.startedAt}
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <section className="terminal-panel">
               <div className="terminal-header">
                 <h2>CLI</h2>
@@ -2114,6 +2178,7 @@ function getProjectPreferences(config: ViewcodexConfig, projectPath: string | nu
         : config.defaultContextLengthTokens,
     skill: project?.runConfig.skill ?? '',
     commitAfterTask: project?.runConfig.commitAfterTask ?? config.commitAfterTask,
+    pushAfterCommit: project?.runConfig.pushAfterCommit ?? false,
     taskMode: project?.runConfig.taskMode ?? 'standard',
     gitRepositoryPath: project?.runConfig.gitRepositoryPath ?? null,
     gitRemoteUrl: project?.runConfig.gitRemoteUrl ?? '',

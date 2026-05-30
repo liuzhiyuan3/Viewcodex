@@ -49,6 +49,20 @@ test('rejects startup docs outside the project directory', async () => {
   );
 });
 
+test('rejects startup docs with hidden or sensitive-looking paths', async () => {
+  const projectPath = await createProject('safe-docs');
+  await configModule.upsertProject(projectPath);
+
+  await assert.rejects(
+    () => configModule.createStartupDoc(projectPath, '.hidden/context', true),
+    /隐藏路径/,
+  );
+  await assert.rejects(
+    () => configModule.createStartupDoc(projectPath, 'docs/api-token.md', true),
+    /敏感信息/,
+  );
+});
+
 test('only reads startup docs registered on the project', async () => {
   const projectPath = await createProject('read-boundary');
   await configModule.upsertProject(projectPath);

@@ -12,6 +12,7 @@ export type ProjectRunConfig = {
   contextLengthTokens: number;
   skill: string;
   commitAfterTask: boolean;
+  pushAfterCommit: boolean;
   taskMode: TaskMode;
   gitRepositoryPath: string | null;
   gitRemoteUrl: string;
@@ -136,6 +137,7 @@ export type TerminalStartOptions = {
   skill: string;
   prompt: string;
   commitAfterTask: boolean;
+  pushAfterCommit: boolean;
   gitRepositoryPath: string | null;
   gitRemoteUrl: string;
   gitBranchMode: GitBranchMode;
@@ -155,6 +157,7 @@ export type TerminalRuntimeSession = TerminalSession & {
   startedAt: string;
   role: CodexRole;
   commitAfterTask: boolean;
+  pushAfterCommit: boolean;
 };
 
 export type ViewcodexApi = {

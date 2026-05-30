@@ -17,6 +17,7 @@ export type ProjectRunConfig = {
   contextLengthTokens: number;
   skill: string;
   commitAfterTask: boolean;
+  pushAfterCommit: boolean;
   taskMode: TaskMode;
   gitRepositoryPath: string | null;
   gitRemoteUrl: string;
@@ -335,6 +336,7 @@ export async function createStartupDoc(
   const config = await loadConfig();
   const project = findProject(config, projectPath);
   const relativePath = normalizeMarkdownPath(inputName);
+  assertSafeStartupDocPath(relativePath);
   const absolutePath = path.join(projectPath, relativePath);
 
   if (!isPathInside(projectPath, absolutePath)) {
@@ -599,6 +601,7 @@ function createDefaultRunConfig(config: ViewcodexConfig): ProjectRunConfig {
     contextLengthTokens: config.defaultContextLengthTokens,
     skill: '',
     commitAfterTask: config.commitAfterTask,
+    pushAfterCommit: false,
     taskMode: 'standard',
     gitRepositoryPath: null,
     gitRemoteUrl: '',
@@ -608,6 +611,7 @@ function createDefaultRunConfig(config: ViewcodexConfig): ProjectRunConfig {
 }
 
 function addStartupDocPath(startupDocs: StartupDocs, relativePath: string, required: boolean): void {
+  assertSafeStartupDocPath(relativePath);
   startupDocs.required = startupDocs.required.filter((entry) => entry !== relativePath);
   startupDocs.optional = startupDocs.optional.filter((entry) => entry !== relativePath);
 
@@ -615,6 +619,18 @@ function addStartupDocPath(startupDocs: StartupDocs, relativePath: string, requi
     startupDocs.required.push(relativePath);
   } else {
     startupDocs.optional.push(relativePath);
+  }
+}
+
+function assertSafeStartupDocPath(relativePath: string): void {
+  const normalized = relativePath.replaceAll('\\', '/');
+  const fileName = path.basename(normalized);
+  if (normalized.split('/').some((part) => part.startsWith('.') && part !== '.' && part !== '..')) {
+    throw new Error('启动文档不能使用隐藏路径');
+  }
+
+  if (/\b(secret|password|token|credential|private-key|id_rsa|api-key|apikey)\b/i.test(fileName)) {
+    throw new Error('启动文档文件名疑似包含敏感信息');
   }
 }
 

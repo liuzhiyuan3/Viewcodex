@@ -48,6 +48,7 @@ type TerminalStartOptions = {
   skill: string;
   prompt: string;
   commitAfterTask: boolean;
+  pushAfterCommit: boolean;
   gitRepositoryPath: string | null;
   gitRemoteUrl: string;
   gitBranchMode: 'current' | 'new';
@@ -64,6 +65,7 @@ type TerminalRuntimeSession = {
   startedAt: string;
   role: CodexRole;
   commitAfterTask: boolean;
+  pushAfterCommit: boolean;
   commitSkipReason?: string;
   gitRepositoryPath: string | null;
   promptPreview: string;
@@ -282,6 +284,7 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
 
   const sessionId = randomUUID();
   const prompt = buildCodexPrompt(options.skill, options.prompt);
+  await ensureCodexAvailable();
   const gitRepositoryPath = await resolveGitRepositoryPath(options.projectPath, options.gitRepositoryPath);
   if (options.gitBranchMode === 'new') {
     await prepareTaskBranch(gitRepositoryPath, options.gitBranchName);
@@ -322,6 +325,7 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     startedAt: new Date().toISOString(),
     role,
     commitAfterTask: role === 'solo' && options.commitAfterTask && commitReadiness.ok,
+    pushAfterCommit: role === 'solo' && options.pushAfterCommit,
     commitSkipReason: commitReadiness.ok ? undefined : commitReadiness.reason,
     gitRepositoryPath,
     promptPreview: options.prompt.trim().slice(0, 4000),
@@ -345,7 +349,12 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
       });
     }
     if (metadata?.commitAfterTask) {
-      void commitProjectChanges(metadata.gitRepositoryPath ?? metadata.projectPath, sessionId, event.sender);
+      void commitProjectChanges(
+        metadata.gitRepositoryPath ?? metadata.projectPath,
+        sessionId,
+        event.sender,
+        metadata.pushAfterCommit,
+      );
     } else if (metadata?.commitSkipReason && metadata.role === 'solo' && options.commitAfterTask) {
       event.sender.send('terminal:data', sessionId, `\r\n[Viewcodex] 跳过 Git 自动提交：${metadata.commitSkipReason}\r\n`);
     }
@@ -569,6 +578,15 @@ async function prepareTaskBranch(repositoryPath: string | null, branchName: stri
   });
 }
 
+async function ensureCodexAvailable(): Promise<void> {
+  try {
+    await execFileAsync('codex', ['--version']);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    throw new Error(`无法启动 Codex CLI：未检测到可执行的 codex。请先在系统终端确认 codex --version 可用。原始错误：${message}`);
+  }
+}
+
 async function checkHealth(): Promise<HealthCheckResult> {
   const [codex, git, gptConfig, skills] = await Promise.all([
     checkCommand('codex', ['--version'], 'Codex CLI'),
@@ -634,6 +652,7 @@ async function commitProjectChanges(
   projectPath: string,
   sessionId: string,
   sender: Electron.WebContents,
+  pushAfterCommit: boolean,
 ): Promise<void> {
   try {
     const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: projectPath });
@@ -642,6 +661,7 @@ async function commitProjectChanges(
       return;
     }
 
+    sender.send('terminal:data', sessionId, `\r\n[Viewcodex] Git 检测到变更：\r\n${status.stdout.trim()}\r\n`);
     await execFileAsync('git', ['add', '-A'], { cwd: projectPath });
     await execFileAsync(
       'git',
@@ -661,6 +681,10 @@ async function commitProjectChanges(
       { cwd: projectPath },
     );
     sender.send('terminal:data', sessionId, '\r\n[Viewcodex] Git 自动提交完成。\r\n');
+    if (pushAfterCommit) {
+      await execFileAsync('git', ['push'], { cwd: projectPath });
+      sender.send('terminal:data', sessionId, '\r\n[Viewcodex] Git push 完成。\r\n');
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     sender.send('terminal:data', sessionId, `\r\n[Viewcodex] Git 自动提交失败：${message}\r\n`);
