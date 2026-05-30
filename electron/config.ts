@@ -483,16 +483,26 @@ export async function writeStartupDocContent(projectPath: string, docPath: strin
 }
 
 export async function listAvailableSkills(): Promise<SkillOption[]> {
-  const skillsRoot = path.join(os.homedir(), '.codex', 'skills');
-  const skillFiles = await findSkillFiles(skillsRoot);
+  const skillFilesByPath = new Set<string>();
+  for (const skillsRoot of getSkillRoots()) {
+    for (const skillPath of await findSkillFiles(skillsRoot)) {
+      skillFilesByPath.add(skillPath);
+    }
+  }
   const skills = await Promise.all(
-    skillFiles.map(async (skillPath) => ({
+    [...skillFilesByPath].map(async (skillPath) => ({
       name: await readSkillName(skillPath),
       path: skillPath,
     })),
   );
+  const skillsByName = new Map<string, SkillOption>();
+  for (const skill of skills) {
+    if (!skillsByName.has(skill.name)) {
+      skillsByName.set(skill.name, skill);
+    }
+  }
 
-  return skills.sort((left, right) => left.name.localeCompare(right.name));
+  return [...skillsByName.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function normalizeConfig(raw: Partial<ViewcodexConfig>): ViewcodexConfig {
@@ -864,6 +874,13 @@ async function findSkillFiles(directory: string, depth = 0): Promise<string[]> {
   }
 
   return files;
+}
+
+function getSkillRoots(): string[] {
+  return [
+    process.env.CODEX_HOME ? path.join(process.env.CODEX_HOME, 'skills') : null,
+    path.join(os.homedir(), '.codex', 'skills'),
+  ].filter((entry, index, entries): entry is string => Boolean(entry) && entries.indexOf(entry) === index);
 }
 
 async function readSkillName(skillPath: string): Promise<string> {

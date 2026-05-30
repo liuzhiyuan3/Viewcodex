@@ -16,6 +16,12 @@ async function createProject(name) {
   return projectPath;
 }
 
+async function createSkill(root, directoryName, skillName) {
+  const skillDirectory = path.join(root, directoryName);
+  await fs.mkdir(skillDirectory, { recursive: true });
+  await fs.writeFile(path.join(skillDirectory, 'SKILL.md'), `name: ${skillName}\n`, 'utf8');
+}
+
 test('creates required and optional startup docs with correct flags', async () => {
   const projectPath = await createProject('docs-flags');
   await configModule.upsertProject(projectPath);
@@ -147,6 +153,21 @@ test('project run config persists git repository and branch strategy', async () 
   assert.equal(project?.runConfig.gitRemoteUrl, 'https://github.com/example/repo.git');
   assert.equal(project?.runConfig.gitBranchMode, 'new');
   assert.equal(project?.runConfig.gitBranchName, 'viewcodex/test-task');
+});
+
+test('lists skills from CODEX_HOME and default codex home without stale cache', async () => {
+  const codexHome = path.join(tempRoot, 'custom-codex-home');
+  process.env.CODEX_HOME = codexHome;
+  await createSkill(path.join(codexHome, 'skills'), 'alpha', 'alpha-skill');
+  await createSkill(path.join(process.env.HOME, '.codex', 'skills'), 'beta', 'beta-skill');
+
+  const firstList = await configModule.listAvailableSkills();
+  assert.ok(firstList.some((skill) => skill.name === 'alpha-skill'));
+  assert.ok(firstList.some((skill) => skill.name === 'beta-skill'));
+
+  await createSkill(path.join(codexHome, 'skills'), 'gamma', 'gamma-skill');
+  const secondList = await configModule.listAvailableSkills();
+  assert.ok(secondList.some((skill) => skill.name === 'gamma-skill'));
 });
 
 test('adds updates and removes prompt memories', async () => {

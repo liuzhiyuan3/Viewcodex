@@ -244,6 +244,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const refreshOnFocus = () => {
+      void refreshAvailableSkills(false);
+    };
+    window.addEventListener('focus', refreshOnFocus);
+    return () => window.removeEventListener('focus', refreshOnFocus);
+  }, []);
+
+  useEffect(() => {
     if (!selectedProject || !window.viewcodex) {
       return;
     }
@@ -274,17 +282,33 @@ export function App() {
 
     try {
       const nextConfig = await window.viewcodex.loadConfig();
-      const nextSkills = await window.viewcodex.listSkills();
       const nextGptConfig = await window.viewcodex.readGptConfig();
       setConfig(nextConfig);
       setGptConfigFile(nextGptConfig);
       setGptConfigDraft(nextGptConfig.content);
       setTeamRolePromptDrafts(nextConfig.teamRolePrompts);
-      setAvailableSkills(nextSkills.length > 0 ? nextSkills : fallbackSkills);
+      await refreshAvailableSkills(false);
       applyRememberedProjectState(nextConfig, nextConfig.selectedProjectPath);
       await refreshRunningCodexProcesses();
       await refreshSessionHandoff(nextConfig.selectedProjectPath);
       setStatus(nextConfig.selectedProjectPath ? '已自动选择上次项目。' : '请选择项目。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function refreshAvailableSkills(showStatus = true) {
+    if (!window.viewcodex) {
+      setAvailableSkills(fallbackSkills);
+      return;
+    }
+
+    try {
+      const nextSkills = await window.viewcodex.listSkills();
+      setAvailableSkills(nextSkills.length > 0 ? nextSkills : fallbackSkills);
+      if (showStatus) {
+        setStatus(`Skills 已刷新：${nextSkills.length}`);
+      }
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
     }
@@ -1629,6 +1653,10 @@ export function App() {
                     ))}
                   </select>
                 </label>
+                <button title="重新扫描本机 skills" onClick={() => void refreshAvailableSkills()}>
+                  <RefreshCw size={14} />
+                  Skill
+                </button>
                 <label>
                   <span>Prompt</span>
                   <select
