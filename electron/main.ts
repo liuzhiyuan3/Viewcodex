@@ -14,6 +14,7 @@ import {
   getStartupDocContext,
   listAvailableSkills,
   loadConfig,
+  readSessionHandoff,
   readStartupDocContent,
   readStartupDocs,
   removeModel,
@@ -29,6 +30,7 @@ import {
   type TaskMode,
   type TeamRolePrompts,
   upsertProject,
+  writeSessionHandoff,
   writeStartupDocContent,
 } from './config.js';
 
@@ -59,6 +61,8 @@ type TerminalRuntimeSession = {
   role: CodexRole;
   commitAfterTask: boolean;
   commitSkipReason?: string;
+  promptPreview: string;
+  transcriptTail: string;
 };
 
 type StartupCheckResult = {
@@ -157,8 +161,12 @@ ipcMain.handle('docs:read', (_event, projectPath: string) => {
   return readStartupDocs(projectPath);
 });
 
-ipcMain.handle('docs:context', (_event, projectPath: string, taskMode: TaskMode) => {
-  return getStartupDocContext(projectPath, taskMode);
+ipcMain.handle('docs:context', (_event, projectPath: string, taskMode: TaskMode, consumeHandoff = false) => {
+  return getStartupDocContext(projectPath, taskMode, { consumeHandoff });
+});
+
+ipcMain.handle('handoff:read', (_event, projectPath: string) => {
+  return readSessionHandoff(projectPath);
 });
 
 ipcMain.handle('docs:create-with-dialog', async (_event, projectPath: string, inputName: string, required = true) => {
@@ -279,9 +287,12 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     role,
     commitAfterTask: role === 'solo' && options.commitAfterTask && commitReadiness.ok,
     commitSkipReason: commitReadiness.ok ? undefined : commitReadiness.reason,
+    promptPreview: options.prompt.trim().slice(0, 4000),
+    transcriptTail: '',
   });
 
   terminal.onData((data) => {
+    appendTranscriptTail(sessionId, data);
     event.sender.send('terminal:data', sessionId, data);
   });
 
@@ -290,6 +301,12 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
     terminals.delete(sessionId);
     terminalMetadata.delete(sessionId);
     event.sender.send('terminal:exit', sessionId, exitCode);
+    if (metadata) {
+      void writeSessionHandoff(metadata.projectPath, createSessionHandoff(metadata, exitCode)).catch((error) => {
+        const message = error instanceof Error ? error.message : '未知错误';
+        event.sender.send('terminal:data', sessionId, `\r\n[Viewcodex] 会话交接记录生成失败：${message}\r\n`);
+      });
+    }
     if (metadata?.commitAfterTask) {
       void commitProjectChanges(metadata.projectPath, sessionId, event.sender);
     } else if (metadata?.commitSkipReason && metadata.role === 'solo' && options.commitAfterTask) {
@@ -312,6 +329,10 @@ ipcMain.handle('terminal:resize', (_event, sessionId: string, cols: number, rows
 });
 
 ipcMain.handle('terminal:kill', (_event, sessionId: string) => {
+  const metadata = terminalMetadata.get(sessionId);
+  if (metadata) {
+    void writeSessionHandoff(metadata.projectPath, createSessionHandoff(metadata, null));
+  }
   terminals.get(sessionId)?.kill();
   terminals.delete(sessionId);
   terminalMetadata.delete(sessionId);
@@ -403,6 +424,57 @@ function buildCodexPrompt(skill: string, prompt: string): string {
 
   const normalizedSkill = trimmedSkill.startsWith('$') ? trimmedSkill : `$${trimmedSkill}`;
   return trimmedPrompt ? `${normalizedSkill} ${trimmedPrompt}` : normalizedSkill;
+}
+
+function appendTranscriptTail(sessionId: string, data: string): void {
+  const metadata = terminalMetadata.get(sessionId);
+  if (!metadata) {
+    return;
+  }
+
+  metadata.transcriptTail = `${metadata.transcriptTail}${data}`.slice(-24_000);
+}
+
+function createSessionHandoff(metadata: TerminalRuntimeSession, exitCode: number | null): string {
+  const transcriptTail = cleanTerminalTranscript(metadata.transcriptTail).slice(-12_000).trim();
+  const promptPreview = metadata.promptPreview.trim();
+
+  return [
+    '# Codex 临时交接',
+    '',
+    '> 这不是项目规范。它只记录上一次 Viewcodex 管理的 Codex 会话状态；下一次启动 Codex 时会自动读取并删除。',
+    '',
+    `- 项目：${metadata.projectPath}`,
+    `- 角色：${formatRoleName(metadata.role)}`,
+    `- 开始：${metadata.startedAt}`,
+    `- 结束：${new Date().toISOString()}`,
+    `- 退出码：${exitCode ?? 'unknown'}`,
+    '',
+    promptPreview ? `## 上次输入\n\n${promptPreview}` : '',
+    transcriptTail ? `## 终端尾部记录\n\n\`\`\`text\n${transcriptTail}\n\`\`\`` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function cleanTerminalTranscript(value: string): string {
+  return value
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim())
+    .slice(-220)
+    .join('\n');
+}
+
+function formatRoleName(role: CodexRole): string {
+  const roleNames: Record<CodexRole, string> = {
+    solo: 'CLI',
+    planner: 'Planner',
+    executor: 'Executor',
+    reviewer: 'Reviewer',
+  };
+
+  return roleNames[role];
 }
 
 async function ensureConfiguredProject(projectPath: string): Promise<void> {

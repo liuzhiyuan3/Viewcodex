@@ -97,6 +97,22 @@ test('standard context preserves required docs and summarizes optional docs', as
   assert.doesNotMatch(quick.context, /docs\/optional\.md/);
 });
 
+test('session handoff is read once without becoming a startup doc', async () => {
+  const projectPath = await createProject('handoff-doc');
+  await configModule.upsertProject(projectPath);
+
+  await configModule.writeSessionHandoff(projectPath, '# Handoff\n\nunfinished task');
+
+  const preview = await configModule.getStartupDocContext(projectPath, 'quick');
+  assert.match(preview.context, /unfinished task/);
+  assert.equal((await configModule.readSessionHandoff(projectPath)).exists, true);
+
+  const consumed = await configModule.getStartupDocContext(projectPath, 'quick', { consumeHandoff: true });
+  assert.match(consumed.context, /unfinished task/);
+  assert.equal(consumed.docs.some((doc) => doc.path.includes('codex-session-handoff')), false);
+  assert.equal((await configModule.readSessionHandoff(projectPath)).exists, false);
+});
+
 async function fileExists(filePath) {
   try {
     await fs.access(filePath);

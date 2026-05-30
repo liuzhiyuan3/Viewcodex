@@ -86,10 +86,23 @@ export type StartupDocContextResult = {
   context: string;
   tokenEstimate: number;
   docs: StartupDocReadResult[];
+  handoff: SessionHandoffDoc | null;
+};
+
+export type StartupDocContextOptions = {
+  consumeHandoff?: boolean;
+};
+
+export type SessionHandoffDoc = {
+  path: string;
+  exists: boolean;
+  content: string | null;
+  createdAt: string | null;
 };
 
 const configDirectory = path.join(os.homedir(), '.viewcodex');
 const configPath = path.join(configDirectory, 'config.json');
+const sessionHandoffRelativePath = path.join('.viewcodex', 'codex-session-handoff.md');
 let configWriteQueue: Promise<void> = Promise.resolve();
 
 const defaultConfig: ViewcodexConfig = {
@@ -350,13 +363,20 @@ export async function readStartupDocs(projectPath: string): Promise<StartupDocRe
 export async function getStartupDocContext(
   projectPath: string,
   taskMode: TaskMode,
+  options: StartupDocContextOptions = {},
 ): Promise<StartupDocContextResult> {
   const config = await loadConfig();
   findProject(config, projectPath);
   const docs = await readStartupDocs(projectPath);
+  const handoff = options.consumeHandoff
+    ? await consumeSessionHandoff(projectPath)
+    : await readSessionHandoff(projectPath);
   const existingDocs = docs.filter((doc) => doc.exists && doc.content?.trim());
   const selectedDocs = taskMode === 'quick' ? existingDocs.filter((doc) => doc.required) : existingDocs;
-  const context = buildStartupDocContext(config, projectPath, selectedDocs, taskMode);
+  const context = prependSessionHandoffContext(
+    buildStartupDocContext(config, projectPath, selectedDocs, taskMode),
+    handoff,
+  );
 
   if (taskMode !== 'deep') {
     await saveConfig(config);
@@ -367,7 +387,64 @@ export async function getStartupDocContext(
     context,
     tokenEstimate: estimateTokens(context),
     docs,
+    handoff,
   };
+}
+
+export async function readSessionHandoff(projectPath: string): Promise<SessionHandoffDoc> {
+  const absolutePath = getSessionHandoffPath(projectPath);
+  if (!isPathInside(projectPath, absolutePath)) {
+    throw new Error('交接文档路径不在项目目录内');
+  }
+
+  try {
+    const [content, stats] = await Promise.all([
+      fs.readFile(absolutePath, 'utf8'),
+      fs.stat(absolutePath),
+    ]);
+    return {
+      path: sessionHandoffRelativePath,
+      exists: true,
+      content,
+      createdAt: stats.mtime.toISOString(),
+    };
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+
+    return {
+      path: sessionHandoffRelativePath,
+      exists: false,
+      content: null,
+      createdAt: null,
+    };
+  }
+}
+
+export async function writeSessionHandoff(projectPath: string, content: string): Promise<SessionHandoffDoc> {
+  const absolutePath = getSessionHandoffPath(projectPath);
+  if (!isPathInside(projectPath, absolutePath)) {
+    throw new Error('交接文档路径不在项目目录内');
+  }
+
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.chmod(absolutePath, 0o600).catch(() => undefined);
+  await fs.writeFile(absolutePath, normalizeSessionHandoffContent(content), { encoding: 'utf8', mode: 0o600 });
+  await fs.chmod(absolutePath, 0o400);
+  return readSessionHandoff(projectPath);
+}
+
+export async function consumeSessionHandoff(projectPath: string): Promise<SessionHandoffDoc | null> {
+  const handoff = await readSessionHandoff(projectPath);
+  if (!handoff.exists) {
+    return null;
+  }
+
+  const absolutePath = getSessionHandoffPath(projectPath);
+  await fs.chmod(absolutePath, 0o600).catch(() => undefined);
+  await fs.unlink(absolutePath);
+  return handoff;
 }
 
 export async function readStartupDocContent(projectPath: string, docPath: string): Promise<StartupDocReadResult> {
@@ -659,6 +736,31 @@ function buildStartupDocContext(
   }
 
   return buildSummaryStartupDocContext(config, projectPath, docs.filter((doc) => doc.required), taskMode);
+}
+
+function prependSessionHandoffContext(context: string, handoff: SessionHandoffDoc | null): string {
+  if (!handoff?.exists || !handoff.content?.trim()) {
+    return context;
+  }
+
+  return [
+    '以下是上一次 Codex 会话的临时交接记录。它不是项目规范，只用于本次快速恢复上下文；阅读后系统会删除原文件：',
+    handoff.content.trim(),
+    context,
+  ].filter(Boolean).join('\n\n');
+}
+
+function getSessionHandoffPath(projectPath: string): string {
+  return path.join(projectPath, sessionHandoffRelativePath);
+}
+
+function normalizeSessionHandoffContent(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    throw new Error('交接文档内容不能为空');
+  }
+
+  return `${trimmed}\n`;
 }
 
 function buildSummaryStartupDocContext(

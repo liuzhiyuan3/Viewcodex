@@ -24,6 +24,7 @@ import type {
   CodexRole,
   GptConfigFile,
   ProjectRunConfig,
+  SessionHandoffDoc,
   SkillOption,
   StartupCheckResult,
   StartupDocContextResult,
@@ -135,9 +136,11 @@ export function App() {
   const [docsResult, setDocsResult] = useState<StartupDocReadResult[]>([]);
   const [startupCheck, setStartupCheck] = useState<ProjectStartupCheck | null>(null);
   const [startupDocContext, setStartupDocContext] = useState<ProjectStartupDocContext | null>(null);
+  const [sessionHandoff, setSessionHandoff] = useState<SessionHandoffDoc | null>(null);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [selectedDocProjectPath, setSelectedDocProjectPath] = useState<string | null>(null);
   const [selectedDocContent, setSelectedDocContent] = useState('');
+  const [readOnlyDoc, setReadOnlyDoc] = useState<{ title: string; subtitle: string; content: string } | null>(null);
   const [savedDocContent, setSavedDocContent] = useState('');
   const [sessions, setSessions] = useState<CodexSessionView[]>([]);
   const [runningTerminals, setRunningTerminals] = useState<TerminalRuntimeSession[]>([]);
@@ -146,11 +149,11 @@ export function App() {
   const [clockNow, setClockNow] = useState(Date.now());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<WorkspaceView>('cli');
-  const [teamStatus, setTeamStatus] = useState('先把需求发给 Planner，满意后再发送给执行组。');
+  const [teamStatus, setTeamStatus] = useState('就绪');
   const [selectedTeamRole, setSelectedTeamRole] = useState<Exclude<CodexRole, 'solo'>>('planner');
   const [teamRolePromptDrafts, setTeamRolePromptDrafts] = useState<TeamRolePrompts>(fallbackConfig.teamRolePrompts);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [status, setStatus] = useState('请选择项目和启动文档。');
+  const [status, setStatus] = useState('就绪');
   const [error, setError] = useState<string | null>(null);
   const terminalsByIdRef = useRef(new Map<string, Terminal>());
   const sessionsRef = useRef<CodexSessionView[]>([]);
@@ -254,7 +257,7 @@ export function App() {
 
   async function loadConfig() {
     if (!window.viewcodex) {
-      setStatus('当前是浏览器预览模式。请选择 Electron 窗口使用项目选择、文档读取和 Codex 启动。');
+      setStatus('浏览器预览模式');
       return;
     }
 
@@ -269,6 +272,7 @@ export function App() {
       setAvailableSkills(nextSkills.length > 0 ? nextSkills : fallbackSkills);
       applyRememberedProjectState(nextConfig, nextConfig.selectedProjectPath);
       await refreshRunningCodexProcesses();
+      await refreshSessionHandoff(nextConfig.selectedProjectPath);
       setStatus(nextConfig.selectedProjectPath ? '已自动选择上次项目。' : '请选择项目。');
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
@@ -292,6 +296,7 @@ export function App() {
       applyRememberedProjectState(nextConfig, nextConfig.selectedProjectPath);
       setDocsResult([]);
       setStartupCheck(null);
+      await refreshSessionHandoff(nextConfig.selectedProjectPath);
       selectLatestSessionForProject(nextConfig.selectedProjectPath);
       setActiveView('cli');
       setStatus('项目已选择。');
@@ -318,6 +323,7 @@ export function App() {
       applyRememberedProjectState(nextConfig, projectPath);
       setDocsResult([]);
       setStartupCheck(null);
+      await refreshSessionHandoff(projectPath);
       selectLatestSessionForProject(projectPath);
       setActiveView('cli');
       setStatus('当前项目已切换。');
@@ -742,8 +748,9 @@ export function App() {
         return false;
       }
 
-      const docContext = await window.viewcodex.getStartupDocContext(selectedProject.path, selectedTaskMode);
+      const docContext = await window.viewcodex.getStartupDocContext(selectedProject.path, selectedTaskMode, true);
       setStartupDocContext({ ...docContext, projectPath: selectedProject.path });
+      setSessionHandoff({ path: docContext.handoff?.path ?? '', exists: false, content: null, createdAt: null });
       setDocsResult(docContext.docs);
       const startupPrompt = composePromptWithStartupContext(prompt, docContext.context);
       await startCodexTerminal(selectedProject, 'solo', startupPrompt);
@@ -768,6 +775,7 @@ export function App() {
       if (selectedProject && window.viewcodex) {
         const result = await window.viewcodex.readStartupDocs(selectedProject.path);
         setDocsResult(result);
+        await refreshSessionHandoff(selectedProject.path);
         void refreshStartupDocContext(selectedProject.path, selectedTaskMode);
         selectLatestSessionForProject(selectedProject.path);
         setStatus(`已刷新：${result.filter((doc) => doc.exists).length} 份启动文档可读。`);
@@ -787,9 +795,36 @@ export function App() {
     try {
       const context = await window.viewcodex.getStartupDocContext(projectPath, taskMode);
       setStartupDocContext({ ...context, projectPath });
+      setSessionHandoff(context.handoff);
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
     }
+  }
+
+  async function refreshSessionHandoff(projectPath: string | null) {
+    if (!projectPath || !window.viewcodex) {
+      setSessionHandoff(null);
+      return;
+    }
+
+    try {
+      setSessionHandoff(await window.viewcodex.readSessionHandoff(projectPath));
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  function viewSessionHandoff() {
+    if (!sessionHandoff?.exists || !sessionHandoff.content) {
+      setStatus('暂无交接');
+      return;
+    }
+
+    setReadOnlyDoc({
+      title: sessionHandoff.path,
+      subtitle: sessionHandoff.createdAt ? `生成于 ${formatDateTime(sessionHandoff.createdAt)}` : '临时交接',
+      content: sessionHandoff.content,
+    });
   }
 
   async function restartCodex() {
@@ -881,7 +916,7 @@ export function App() {
       await ensureTeamSession('planner');
       setActiveView('team');
       setSelectedTeamRole('planner');
-      setTeamStatus('Planner 已启动。确认方案后再启动执行组，减少 token 消耗。');
+      setTeamStatus('Planner 已启动');
     } catch (caughtError) {
       setError(toErrorMessage(caughtError));
     }
@@ -895,7 +930,7 @@ export function App() {
 
     const planner = await ensureTeamSession('planner');
     await sendTextToSession(planner.id, `需求：\n${prompt.trim()}`);
-    setTeamStatus('需求已发送给 Planner。确认计划满意后，发送给执行组。');
+    setTeamStatus('已发送给 Planner');
   }
 
   async function sendPlannerToExecutionGroup() {
@@ -935,8 +970,9 @@ export function App() {
       throw new Error(!window.viewcodex ? '当前环境不是 Electron 窗口，无法启动 Team' : '请先选择项目');
     }
 
-    const docContext = await window.viewcodex.getStartupDocContext(selectedProject.path, selectedTaskMode);
+    const docContext = await window.viewcodex.getStartupDocContext(selectedProject.path, selectedTaskMode, true);
     setStartupDocContext({ ...docContext, projectPath: selectedProject.path });
+    setSessionHandoff({ path: docContext.handoff?.path ?? '', exists: false, content: null, createdAt: null });
     const rolePrompt = composePromptWithStartupContext(
       getTeamRolePrompt(role, config.teamRolePrompts),
       docContext.context,
@@ -1199,7 +1235,7 @@ export function App() {
             <TerminalSquare size={24} />
             <div>
               <strong>Viewcodex</strong>
-              <span>项目</span>
+              <span>Workbench</span>
             </div>
           </div>
           <button className="sidebar-action" onClick={selectProject}>
@@ -1210,7 +1246,7 @@ export function App() {
 
         <div className="sidebar-projects">
           {config.projects.length === 0 ? (
-            <p className="empty-text">先选择一个项目目录。</p>
+            <p className="empty-text">暂无项目</p>
           ) : (
             config.projects.map((project) => (
               <ProjectRow
@@ -1233,7 +1269,7 @@ export function App() {
         <header className="topbar">
           <div>
             <h1>{selectedProject?.name ?? '选择项目'}</h1>
-            <p>{selectedProject?.path ?? '进入后先选择项目；右侧默认显示这个项目最近的 CLI 会话。'}</p>
+            <p>{selectedProject?.path ?? '未选择项目'}</p>
           </div>
           <div className="topbar-actions">
             <button
@@ -1349,13 +1385,13 @@ export function App() {
                   ))}
                 </>
               ) : (
-                <p className="empty-text">还没有启动文档。选择或创建后，新会话会先读取它们。</p>
+                <p className="empty-text">暂无启动文档</p>
               )}
             </div>
             <div className="read-result-panel inline-panel">
               <h2>启动文档读取结果</h2>
               {docsResult.length === 0 ? (
-                <p className="empty-text">启动前读取后，这里会显示每份启动文档的状态。</p>
+                <p className="empty-text">暂无读取记录</p>
               ) : (
                 docsResult.map((doc) => (
                   <div className="read-result-row" key={`${doc.required}-${doc.path}`}>
@@ -1367,6 +1403,20 @@ export function App() {
                   </div>
                 ))
               )}
+            </div>
+            <div className="read-result-panel inline-panel">
+              <div className="panel-title-row">
+                <h2>会话交接</h2>
+                <div className="compact-actions">
+                  <button disabled={!sessionHandoff?.exists} onClick={viewSessionHandoff}>
+                    <BookOpenCheck size={15} />
+                    查看
+                  </button>
+                </div>
+              </div>
+              <p className="empty-text">
+                {sessionHandoff?.exists ? '待下次启动读取' : '暂无交接'}
+              </p>
             </div>
           </section>
         ) : null}
@@ -1497,7 +1547,7 @@ export function App() {
                 </span>
               </div>
               <textarea
-                placeholder="输入需求，点击右上角启动。"
+                placeholder="输入需求"
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
               />
@@ -1505,7 +1555,7 @@ export function App() {
             <section className="terminal-panel">
               <div className="terminal-header">
                 <h2>CLI</h2>
-                <span>{activeSoloSession?.command ?? '尚未启动 Codex'}</span>
+                <span>{activeSoloSession?.command ?? '未启动'}</span>
                 {activeSoloSession ? <ContextUsageMeter session={activeSoloSession} /> : null}
                 <div className="terminal-actions">
                   <button onClick={() => void refreshWorkspaceStatus()}>
@@ -1527,7 +1577,7 @@ export function App() {
                 </div>
               </div>
               {sessions.filter((session) => session.role === 'solo').length === 0 ? (
-                <div className="terminal-empty">选择项目，输入需求，然后点击“启动”。</div>
+                <div className="terminal-empty">未启动</div>
               ) : (
                 sessions.filter((session) => session.role === 'solo').map((session) => (
                   <TerminalViewport
@@ -1637,6 +1687,25 @@ export function App() {
           </section>
         </div>
       ) : null}
+      {readOnlyDoc ? (
+        <div className="doc-editor-overlay" role="dialog" aria-modal="true" aria-label="查看交接文档">
+          <section className="doc-editor">
+            <header className="doc-editor-header">
+              <div>
+                <h2>{readOnlyDoc.title}</h2>
+                <span>{readOnlyDoc.subtitle}</span>
+              </div>
+              <div className="doc-editor-actions">
+                <button onClick={() => setReadOnlyDoc(null)}>
+                  <X size={15} />
+                  关闭
+                </button>
+              </div>
+            </header>
+            <textarea readOnly value={readOnlyDoc.content} />
+          </section>
+        </div>
+      ) : null}
       {configDialog ? (
         <div className="doc-editor-overlay" role="dialog" aria-modal="true" aria-label="配置编辑">
           <section className="doc-editor config-dialog">
@@ -1702,7 +1771,7 @@ export function App() {
                 </div>
                 <div className="prompt-memory-list">
                   {config.promptMemories.length === 0 ? (
-                    <p className="empty-text">还没有 Prompt 记忆。</p>
+                    <p className="empty-text">暂无 Prompt</p>
                   ) : (
                     config.promptMemories.map((memory) => (
                       <div className="prompt-memory-row" key={memory.id}>
@@ -1767,7 +1836,7 @@ function TeamRolePanel({
           sidebarCollapsed={sidebarCollapsed}
         />
       ) : (
-        <div className="team-role-empty">启动 Team 后显示 {formatRoleName(role)} CLI。</div>
+        <div className="team-role-empty">未启动</div>
       )}
     </section>
   );
@@ -1909,6 +1978,11 @@ function formatContextLength(tokens: number): string {
 
 function formatTokenCount(tokens: number): string {
   return tokens >= 1000 ? `${(tokens / 1000).toFixed(tokens >= 10_000 ? 0 : 1)}K` : `${tokens}`;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 function composePromptWithStartupContext(prompt: string, startupContext: string, promptLabel = '用户需求'): string {

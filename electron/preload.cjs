@@ -31,7 +31,9 @@ contextBridge.exposeInMainWorld('viewcodex', {
   writeStartupDoc: (projectPath, docPath, content) =>
     ipcRenderer.invoke('docs:write-one', projectPath, docPath, content),
   readStartupDocs: (projectPath) => ipcRenderer.invoke('docs:read', projectPath),
-  getStartupDocContext: (projectPath, taskMode) => ipcRenderer.invoke('docs:context', projectPath, taskMode),
+  getStartupDocContext: (projectPath, taskMode, consumeHandoff) =>
+    ipcRenderer.invoke('docs:context', projectPath, taskMode, consumeHandoff),
+  readSessionHandoff: (projectPath) => ipcRenderer.invoke('handoff:read', projectPath),
   checkStartup: (projectPath) => ipcRenderer.invoke('startup:check', projectPath),
   listTerminals: () => ipcRenderer.invoke('terminal:list'),
   startTerminal: (options) => ipcRenderer.invoke('terminal:start', options),

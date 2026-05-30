@@ -87,6 +87,14 @@ export type StartupDocContextResult = {
   context: string;
   tokenEstimate: number;
   docs: StartupDocReadResult[];
+  handoff: SessionHandoffDoc | null;
+};
+
+export type SessionHandoffDoc = {
+  path: string;
+  exists: boolean;
+  content: string | null;
+  createdAt: string | null;
 };
 
 export type StartupCheckResult = {
@@ -152,7 +160,12 @@ export type ViewcodexApi = {
   readStartupDoc: (projectPath: string, docPath: string) => Promise<StartupDocReadResult>;
   writeStartupDoc: (projectPath: string, docPath: string, content: string) => Promise<void>;
   readStartupDocs: (projectPath: string) => Promise<StartupDocReadResult[]>;
-  getStartupDocContext: (projectPath: string, taskMode: TaskMode) => Promise<StartupDocContextResult>;
+  getStartupDocContext: (
+    projectPath: string,
+    taskMode: TaskMode,
+    consumeHandoff?: boolean,
+  ) => Promise<StartupDocContextResult>;
+  readSessionHandoff: (projectPath: string) => Promise<SessionHandoffDoc>;
   checkStartup: (projectPath: string) => Promise<StartupCheckResult>;
   listTerminals: () => Promise<TerminalRuntimeSession[]>;
   startTerminal: (options: TerminalStartOptions) => Promise<TerminalSession>;
