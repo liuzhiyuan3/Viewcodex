@@ -1580,53 +1580,62 @@ export function App() {
 
       <section className="workspace">
         <header className="topbar">
-          <div>
+          <div className="topbar-title">
             <h1>{selectedProject?.name ?? '选择项目'}</h1>
             <p>{selectedProject?.path ?? '未选择项目'}</p>
           </div>
           <div className="topbar-actions">
             <button
               className={`workspace-tab ${activeView === 'dashboard' ? 'active' : ''}`}
+              title="工作台"
+              aria-label="工作台"
               onClick={() => setActiveView('dashboard')}
             >
               <LayoutDashboard size={16} />
-              工作台
             </button>
             <button
               className={`workspace-tab ${activeView === 'cli' ? 'active' : ''}`}
+              title="CLI"
+              aria-label="CLI"
               onClick={() => setActiveView('cli')}
             >
               <TerminalSquare size={16} />
-              CLI
             </button>
             <button
               className={`workspace-tab ${activeView === 'team' ? 'active' : ''}`}
+              title="Team"
+              aria-label="Team"
               onClick={() => setActiveView('team')}
             >
               <Users size={16} />
-              Team
             </button>
             <button
               className={`workspace-tab ${activeView === 'docs' ? 'active' : ''}`}
+              title="文档"
+              aria-label="文档"
               onClick={() => setActiveView('docs')}
             >
               <BookOpenCheck size={16} />
-              文档
             </button>
             <button
               className={`workspace-tab ${activeView === 'config' ? 'active' : ''}`}
+              title="配置"
+              aria-label="配置"
               onClick={() => setActiveView('config')}
             >
               <GitCommitHorizontal size={16} />
-              配置
             </button>
             <button className="primary-button" disabled={selectedProjectIsStarting} onClick={readDocsBeforeRun}>
               <Play size={17} />
               {selectedProjectIsStarting ? '启动中' : '启动'}
             </button>
-            <button className="workspace-tab icon-only" onClick={() => setSidebarCollapsed((value) => !value)}>
+            <button
+              className="workspace-tab"
+              title={sidebarCollapsed ? '显示项目' : '最大化 CLI'}
+              aria-label={sidebarCollapsed ? '显示项目' : '最大化 CLI'}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+            >
               {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-              {sidebarCollapsed ? '显示项目' : '最大化 CLI'}
             </button>
           </div>
         </header>
@@ -2002,9 +2011,8 @@ export function App() {
                     ))}
                   </select>
                 </label>
-                <button title="重新扫描本机 skills" onClick={() => void refreshAvailableSkills()}>
+                <button title="重新扫描本机 skills" aria-label="重新扫描本机 skills" onClick={() => void refreshAvailableSkills()}>
                   <RefreshCw size={14} />
-                  Skill
                 </button>
                 <label>
                   <span>Prompt</span>
@@ -2042,17 +2050,14 @@ export function App() {
                     ))}
                   </select>
                 </label>
-                <button onClick={() => void selectTaskAttachments()}>
+                <button title="选择任务附件" aria-label="选择任务附件" onClick={() => void selectTaskAttachments()}>
                   <Paperclip size={14} />
-                  附件
                 </button>
-                <button onClick={() => void runStartupCheck()}>
+                <button title="启动检查" aria-label="启动检查" onClick={() => void runStartupCheck()}>
                   <RefreshCw size={14} />
-                  检查
                 </button>
-                <button onClick={() => void openDefaultStartupDoc()}>
+                <button title="打开项目规范" aria-label="打开项目规范" onClick={() => void openDefaultStartupDoc()}>
                   <BookOpenCheck size={14} />
-                  项目规范
                 </button>
                 <span className="token-estimate" title="粗略按 4 字符约 1 token 估算">
                   {formatTaskMode(selectedTaskMode)} · 约 {formatTokenCount(promptTokenEstimate)} /{' '}

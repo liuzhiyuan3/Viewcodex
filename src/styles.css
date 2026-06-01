@@ -151,28 +151,32 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 22px 26px;
+  padding: 14px 18px;
 }
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 12px;
-  padding-bottom: 14px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+}
+
+.topbar-title {
+  min-width: 0;
 }
 
 .topbar h1 {
   margin: 0;
   color: var(--text);
-  font-size: 23px;
+  font-size: 18px;
   line-height: 1.2;
 }
 
 .topbar p {
-  margin: 6px 0 0;
+  margin: 3px 0 0;
   color: var(--muted);
   max-width: 780px;
   overflow: hidden;
@@ -183,30 +187,29 @@ button:disabled {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
 .workspace-tab {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
-  padding: 9px 10px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
 }
 
 .workspace-tab.active,
 .workspace-tab:hover {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.workspace-tab.icon-only {
-  white-space: nowrap;
 }
 
 .status-strip {
@@ -218,8 +221,8 @@ button:disabled {
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: transparent;
-  margin-bottom: 12px;
-  padding: 0 0 10px;
+  margin-bottom: 8px;
+  padding: 0 0 7px;
   flex-shrink: 0;
 }
 
@@ -259,7 +262,8 @@ button:disabled {
   color: white;
   cursor: pointer;
   font-weight: 650;
-  padding: 11px 16px;
+  min-height: 32px;
+  padding: 7px 12px;
 }
 
 .primary-button:hover {
@@ -794,7 +798,7 @@ button:disabled {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
   overflow: hidden;
 }
@@ -955,16 +959,16 @@ button:disabled {
 .prompt-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border-bottom: 1px solid var(--line);
-  padding: 8px 10px;
+  padding: 5px 8px;
   flex-wrap: wrap;
 }
 
 .prompt-toolbar label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }
 
 .prompt-toolbar span {
@@ -978,13 +982,15 @@ button:disabled {
   border-radius: 6px;
   background: var(--surface);
   color: var(--text);
-  max-width: 220px;
-  padding: 6px 8px;
+  max-width: 180px;
+  min-height: 28px;
+  padding: 4px 7px;
 }
 
 .prompt-toolbar button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -992,7 +998,9 @@ button:disabled {
   color: var(--text-soft);
   cursor: pointer;
   font-size: 12px;
-  padding: 6px 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
 }
 
 .prompt-toolbar button:hover {
@@ -1010,21 +1018,21 @@ button:disabled {
 .prompt-dock textarea {
   display: block;
   width: 100%;
-  min-height: 72px;
-  max-height: 108px;
+  min-height: 48px;
+  max-height: 76px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text);
   outline: none;
-  padding: 12px;
+  padding: 9px 10px;
   resize: vertical;
 }
 
 .attachment-tray {
   border-top: 1px solid var(--line);
   background: rgba(243, 244, 239, 0.72);
-  padding: 10px;
+  padding: 7px 8px;
 }
 
 .attachment-tray-header {
@@ -1053,8 +1061,8 @@ button:disabled {
 
 .attachment-list {
   display: grid;
-  gap: 8px;
-  max-height: 150px;
+  gap: 6px;
+  max-height: 96px;
   overflow: auto;
 }
 
