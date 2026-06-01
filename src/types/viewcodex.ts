@@ -60,6 +60,7 @@ export type SessionHistoryEntry = {
   model: string;
   skill: string;
   promptPreview: string;
+  transcriptTail: string;
   startedAt: string;
   endedAt: string;
   exitCode: number | null;

@@ -199,12 +199,14 @@ test('records recent session history with newest entries first', async () => {
     model: 'gpt-test',
     skill: 'review',
     promptPreview: 'new',
+    transcriptTail: 'last terminal lines',
     startedAt: '2026-01-01T00:02:00.000Z',
     endedAt: '2026-01-01T00:03:00.000Z',
     exitCode: 1,
   });
 
   assert.equal(nextConfig.sessionHistory[0].id, 'new-session');
+  assert.equal(nextConfig.sessionHistory[0].transcriptTail, 'last terminal lines');
   assert.equal(nextConfig.sessionHistory[1].id, 'old-session');
 
   const clearedConfig = await configModule.clearSessionHistory(projectPath);

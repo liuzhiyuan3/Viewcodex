@@ -45,6 +45,7 @@ export type SessionHistoryEntry = {
   model: string;
   skill: string;
   promptPreview: string;
+  transcriptTail: string;
   startedAt: string;
   endedAt: string;
   exitCode: number | null;
@@ -733,6 +734,7 @@ function normalizeSessionHistoryEntry(entry: Partial<SessionHistoryEntry>): Sess
     model: entry.model ?? '',
     skill: entry.skill ?? '',
     promptPreview: entry.promptPreview ?? '',
+    transcriptTail: entry.transcriptTail ?? '',
     startedAt: entry.startedAt ?? new Date().toISOString(),
     endedAt: entry.endedAt ?? entry.startedAt ?? new Date().toISOString(),
     exitCode: typeof entry.exitCode === 'number' ? entry.exitCode : null,

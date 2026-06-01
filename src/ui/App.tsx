@@ -30,6 +30,7 @@ import type {
   GptConfigFile,
   HealthCheckResult,
   ProjectRunConfig,
+  SessionHistoryEntry,
   SessionHandoffDoc,
   SkillOption,
   StartupCheckResult,
@@ -139,6 +140,13 @@ type CodexSessionView = {
   exitCode: number | null;
   terminal: Terminal;
   fitAddon: FitAddon;
+};
+
+type StartCodexOverrides = {
+  model?: string;
+  skill?: string;
+  reasoningEffort?: string;
+  contextLengthTokens?: number;
 };
 
 export function App() {
@@ -781,6 +789,76 @@ export function App() {
     }
   }
 
+  function viewSessionHistory(entry: SessionHistoryEntry) {
+    setReadOnlyDoc({
+      title: `历史会话 ${entry.id}`,
+      subtitle: `${formatRoleName(entry.role as CodexRole)} · ${formatDateTime(entry.endedAt)}`,
+      content: buildSessionHistoryDetail(entry),
+    });
+  }
+
+  function restoreSessionPrompt(entry: SessionHistoryEntry) {
+    setPrompt(entry.promptPreview);
+    if (entry.model && config.models.includes(entry.model)) {
+      setSelectedModel(entry.model);
+      void updateProjectRunConfig({ model: entry.model });
+    }
+    setSelectedSkill(entry.skill);
+    void updateProjectRunConfig({ skill: entry.skill });
+    setActiveView('cli');
+    setStatus('已恢复历史会话输入。');
+  }
+
+  async function continueSessionHistory(entry: SessionHistoryEntry) {
+    const project = config.projects.find((candidate) => candidate.path === entry.projectPath);
+    if (!project || !window.viewcodex) {
+      setError(!window.viewcodex ? '当前环境不是 Electron 窗口，无法继续历史会话。' : '历史会话项目不存在。');
+      return;
+    }
+
+    try {
+      setError(null);
+      if (findRunningSessionsForProject(project.path).length > 0) {
+        selectLatestSessionForProject(project.path);
+        setStatus('当前项目已有 Codex 在运行。需要继续历史会话时，请先停止当前会话。');
+        return;
+      }
+
+      setProjectStarting(project.path, true);
+      const check = await window.viewcodex.checkStartup(project.path);
+      setStartupCheck({ ...check, projectPath: project.path });
+      setDocsResult(check.docs);
+      if (!check.ok) {
+        setStatus(`启动检查未通过：${check.errors.join('、')}`);
+        return;
+      }
+
+      const docContext = await window.viewcodex.getStartupDocContext(project.path, selectedTaskMode, true);
+      setStartupDocContext({ ...docContext, projectPath: project.path });
+      setSessionHandoff({ path: docContext.handoff?.path ?? '', exists: false, content: null, createdAt: null });
+      setDocsResult(docContext.docs);
+      const attachments = config.taskAttachments.filter((attachment) => attachment.projectPath === project.path);
+      const startupContext = [
+        docContext.context,
+        buildTaskAttachmentContext(attachments),
+        buildSessionHistoryContext(entry),
+      ].filter((value) => value.trim()).join('\n\n');
+      const continuePrompt = composePromptWithStartupContext(
+        '请基于上述历史会话继续推进，优先处理未完成事项，并在完成后说明本次接续做了什么。',
+        startupContext,
+      );
+      await startCodexTerminal(project, 'solo', continuePrompt, {
+        model: entry.model || selectedModel,
+        skill: entry.skill || selectedSkill,
+      });
+      setStatus('已从历史会话继续启动 Codex。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    } finally {
+      setProjectStarting(project.path, false);
+    }
+  }
+
   function applyRememberedProjectState(nextConfig: ViewcodexConfig, projectPath: string | null) {
     const preferences = getProjectPreferences(nextConfig, projectPath);
     setSelectedModel(preferences.model);
@@ -1409,19 +1487,24 @@ export function App() {
     project: ViewcodexProject,
     role: CodexRole = 'solo',
     promptOverride = prompt,
+    overrides: StartCodexOverrides = {},
   ): Promise<CodexSessionView> {
     if (!window.viewcodex) {
       throw new Error('当前环境不是 Electron 窗口，无法启动内嵌终端');
     }
 
+    const sessionModel = overrides.model ?? selectedModel;
+    const sessionSkill = overrides.skill ?? selectedSkill;
+    const sessionReasoningEffort = overrides.reasoningEffort ?? selectedReasoningEffort;
+    const sessionContextLength = overrides.contextLengthTokens ?? selectedContextLengthTokens;
     const { terminal, fitAddon } = createTerminal();
     terminal.writeln('[Viewcodex] 正在启动 Codex CLI...');
     terminal.writeln(`[Viewcodex] 项目：${project.path}`);
     terminal.writeln(`[Viewcodex] 角色：${formatRoleName(role)}`);
-    terminal.writeln(`[Viewcodex] Skill：${selectedSkill || '不使用'}`);
-    terminal.writeln(`[Viewcodex] 模型：${selectedModel}`);
-    terminal.writeln(`[Viewcodex] 思考强度：${selectedReasoningEffort}`);
-    terminal.writeln(`[Viewcodex] 上下文长度：${formatContextLength(selectedContextLengthTokens)}`);
+    terminal.writeln(`[Viewcodex] Skill：${sessionSkill || '不使用'}`);
+    terminal.writeln(`[Viewcodex] 模型：${sessionModel}`);
+    terminal.writeln(`[Viewcodex] 思考强度：${sessionReasoningEffort}`);
+    terminal.writeln(`[Viewcodex] 上下文长度：${formatContextLength(sessionContextLength)}`);
     if (role === 'solo') {
       terminal.writeln(`[Viewcodex] 任务模式：${formatTaskMode(selectedTaskMode)}`);
     }
@@ -1429,9 +1512,9 @@ export function App() {
 
     const session = await window.viewcodex.startTerminal({
       projectPath: project.path,
-      model: selectedModel,
-      reasoningEffort: selectedReasoningEffort,
-      skill: role === 'solo' ? selectedSkill : '',
+      model: sessionModel,
+      reasoningEffort: sessionReasoningEffort,
+      skill: role === 'solo' ? sessionSkill : '',
       prompt: promptOverride,
       commitAfterTask: role === 'solo' && commitAfterTask,
       pushAfterCommit: role === 'solo' && pushAfterCommit,
@@ -1466,10 +1549,10 @@ export function App() {
         command: session.command,
         projectName: project.name,
         projectPath: project.path,
-        skill: role === 'solo' ? selectedSkill : '',
-        model: selectedModel,
-        reasoningEffort: selectedReasoningEffort,
-        contextLengthTokens: selectedContextLengthTokens,
+        skill: role === 'solo' ? sessionSkill : '',
+        model: sessionModel,
+        reasoningEffort: sessionReasoningEffort,
+        contextLengthTokens: sessionContextLength,
         promptTokenEstimate: sessionPromptTokenEstimate,
         role,
         status: 'running',
@@ -2204,6 +2287,11 @@ export function App() {
                             {formatDateTime(entry.endedAt)}
                           </small>
                         </span>
+                        <div className="history-actions">
+                          <button onClick={() => viewSessionHistory(entry)}>查看</button>
+                          <button onClick={() => restoreSessionPrompt(entry)}>恢复</button>
+                          <button onClick={() => void continueSessionHistory(entry)}>继续</button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2734,6 +2822,39 @@ function buildTaskAttachmentContext(attachments: TaskAttachment[]): string {
       ].join('\n'),
     ),
   ].join('\n');
+}
+
+function buildSessionHistoryDetail(entry: SessionHistoryEntry): string {
+  return [
+    `# 历史会话 ${entry.id}`,
+    '',
+    `- 项目：${entry.projectPath}`,
+    `- 角色：${formatRoleName(entry.role as CodexRole)}`,
+    `- 模型：${entry.model || '未知'}`,
+    `- Skill：${entry.skill || '不使用'}`,
+    `- 开始：${formatDateTime(entry.startedAt)}`,
+    `- 结束：${formatDateTime(entry.endedAt)}`,
+    `- 退出码：${entry.exitCode ?? 'unknown'}`,
+    '',
+    entry.promptPreview.trim() ? `## 输入\n\n${entry.promptPreview.trim()}` : '',
+    entry.transcriptTail.trim() ? `## 终端尾部记录\n\n\`\`\`text\n${entry.transcriptTail.trim()}\n\`\`\`` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function buildSessionHistoryContext(entry: SessionHistoryEntry): string {
+  return [
+    '## 要继续的历史会话',
+    `- 会话 ID：${entry.id}`,
+    `- 角色：${formatRoleName(entry.role as CodexRole)}`,
+    `- 模型：${entry.model || '未知'}`,
+    `- Skill：${entry.skill || '不使用'}`,
+    `- 开始：${entry.startedAt}`,
+    `- 结束：${entry.endedAt}`,
+    `- 退出码：${entry.exitCode ?? 'unknown'}`,
+    '',
+    entry.promptPreview.trim() ? `### 历史输入\n\n${entry.promptPreview.trim()}` : '',
+    entry.transcriptTail.trim() ? `### 历史终端尾部记录\n\n\`\`\`text\n${entry.transcriptTail.trim()}\n\`\`\`` : '',
+  ].filter(Boolean).join('\n');
 }
 
 function estimateTokens(text: string): number {
