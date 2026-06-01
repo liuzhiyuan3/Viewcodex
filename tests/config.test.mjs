@@ -211,6 +211,45 @@ test('records recent session history with newest entries first', async () => {
   assert.equal(clearedConfig.sessionHistory.some((entry) => entry.projectPath === projectPath), false);
 });
 
+test('copies task attachments into the project and clears them', async () => {
+  const projectPath = await createProject('task-attachments');
+  const externalPath = path.join(tempRoot, 'reference.md');
+  await fs.writeFile(externalPath, '# Reference\n\nUse this file.', 'utf8');
+  await configModule.upsertProject(projectPath);
+
+  const attachedConfig = await configModule.addTaskAttachments(projectPath, [externalPath], 'read first');
+  const attachment = attachedConfig.taskAttachments.find((entry) => entry.projectPath === projectPath);
+
+  assert.equal(attachment?.originalName, 'reference.md');
+  assert.equal(attachment?.kind, 'document');
+  assert.equal(attachment?.note, 'read first');
+  assert.match(attachment?.path ?? '', /^\.viewcodex\/attachments\//);
+  assert.equal(await fileExists(path.join(projectPath, attachment.path)), true);
+
+  const notedConfig = await configModule.updateTaskAttachmentNote(attachment.id, 'updated note');
+  assert.equal(notedConfig.taskAttachments.find((entry) => entry.id === attachment.id)?.note, 'updated note');
+
+  const clearedConfig = await configModule.clearTaskAttachments(projectPath);
+  assert.equal(clearedConfig.taskAttachments.some((entry) => entry.projectPath === projectPath), false);
+  assert.equal(await fileExists(path.join(projectPath, attachment.path)), false);
+});
+
+test('caps task attachments per project', async () => {
+  const projectPath = await createProject('task-attachment-cap');
+  await configModule.upsertProject(projectPath);
+  const files = [];
+
+  for (let index = 0; index < 22; index += 1) {
+    const filePath = path.join(tempRoot, `cap-${index}.txt`);
+    await fs.writeFile(filePath, `attachment ${index}`, 'utf8');
+    files.push(filePath);
+  }
+
+  const nextConfig = await configModule.addTaskAttachments(projectPath, files);
+  const projectAttachments = nextConfig.taskAttachments.filter((entry) => entry.projectPath === projectPath);
+  assert.equal(projectAttachments.length, 20);
+});
+
 test('lists skills from CODEX_HOME and default codex home without stale cache', async () => {
   const codexHome = path.join(tempRoot, 'custom-codex-home');
   process.env.CODEX_HOME = codexHome;

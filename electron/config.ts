@@ -50,6 +50,22 @@ export type SessionHistoryEntry = {
   exitCode: number | null;
 };
 
+export type TaskAttachment = {
+  id: string;
+  projectPath: string;
+  path: string;
+  originalName: string;
+  kind: 'image' | 'document';
+  note: string;
+  createdAt: string;
+};
+
+export type TaskTemplate = {
+  id: string;
+  title: string;
+  prompt: string;
+};
+
 export type ViewcodexProject = {
   name: string;
   path: string;
@@ -73,6 +89,8 @@ export type ViewcodexConfig = {
   teamRolePrompts: TeamRolePrompts;
   promptMemories: PromptMemory[];
   sessionHistory: SessionHistoryEntry[];
+  taskAttachments: TaskAttachment[];
+  taskTemplates: TaskTemplate[];
   startupDocSummaryCache: StartupDocSummaryCache;
 };
 
@@ -123,6 +141,11 @@ export type SessionHandoffDoc = {
 const configDirectory = path.join(os.homedir(), '.viewcodex');
 const configPath = path.join(configDirectory, 'config.json');
 const sessionHandoffRelativePath = path.join('.viewcodex', 'codex-session-handoff.md');
+const taskAttachmentDirectory = path.join('.viewcodex', 'attachments');
+const maxTaskAttachmentsPerProject = 20;
+const maxTaskTemplates = 30;
+const imageAttachmentExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+const documentAttachmentExtensions = new Set(['.md', '.mdx', '.txt', '.pdf']);
 let configWriteQueue: Promise<void> = Promise.resolve();
 
 const defaultConfig: ViewcodexConfig = {
@@ -139,6 +162,14 @@ const defaultConfig: ViewcodexConfig = {
   commitAfterTask: false,
   promptMemories: [],
   sessionHistory: [],
+  taskAttachments: [],
+  taskTemplates: [
+    { id: 'fix-bug', title: '修复 Bug', prompt: '请调查并修复这个问题，完成后说明根因、改动文件和验证结果：\n\n' },
+    { id: 'add-feature', title: '添加功能', prompt: '请实现以下功能，保持改动清晰，并补充必要验证：\n\n' },
+    { id: 'ui-polish', title: '优化界面', prompt: '请优化这个界面体验，保持风格一致，检查布局、间距、状态和响应式表现：\n\n' },
+    { id: 'code-review', title: '代码审查', prompt: '请做一次代码审查，优先列出 bug、风险、回归点和缺失测试：\n\n' },
+    { id: 'write-tests', title: '补充测试', prompt: '请为以下行为补充测试，并运行相关验证：\n\n' },
+  ],
   startupDocSummaryCache: {},
   teamRolePrompts: {
     planner:
@@ -293,6 +324,91 @@ export async function removePromptMemory(id: string): Promise<ViewcodexConfig> {
   return updateConfig((config) => {
     config.promptMemories = config.promptMemories.filter((entry) => entry.id !== id);
   });
+}
+
+export async function addTaskAttachments(
+  projectPath: string,
+  filePaths: string[],
+  note = '',
+): Promise<ViewcodexConfig> {
+  const config = await loadConfig();
+  findProject(config, projectPath);
+  const normalizedNote = note.trim().slice(0, 500);
+  const createdAt = new Date().toISOString();
+  const nextAttachments: TaskAttachment[] = [];
+
+  for (const filePath of filePaths) {
+    const kind = getTaskAttachmentKind(filePath);
+    const stats = await fs.stat(filePath);
+    if (!stats.isFile()) {
+      throw new Error('附件必须是文件');
+    }
+
+    const id = randomUUID();
+    const sourceName = path.basename(filePath);
+    const safeName = sanitizeAttachmentFileName(sourceName);
+    const relativePath = path.join(taskAttachmentDirectory, `${id}-${safeName}`);
+    const absolutePath = path.join(projectPath, relativePath);
+    if (!isPathInside(projectPath, absolutePath)) {
+      throw new Error('附件必须复制到项目目录内');
+    }
+
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.copyFile(filePath, absolutePath);
+    nextAttachments.push({
+      id,
+      projectPath,
+      path: relativePath,
+      originalName: sourceName,
+      kind,
+      note: normalizedNote,
+      createdAt,
+    });
+  }
+
+  const previousAttachments = config.taskAttachments;
+  config.taskAttachments = capTaskAttachments([
+    ...nextAttachments,
+    ...config.taskAttachments,
+  ]);
+  await cleanupRemovedTaskAttachments([...previousAttachments, ...nextAttachments], config.taskAttachments);
+  return saveConfig(config);
+}
+
+export async function updateTaskAttachmentNote(id: string, note: string): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    const attachment = config.taskAttachments.find((entry) => entry.id === id);
+    if (!attachment) {
+      throw new Error('附件不存在');
+    }
+
+    attachment.note = note.trim().slice(0, 500);
+  });
+}
+
+export async function removeTaskAttachment(id: string): Promise<ViewcodexConfig> {
+  const config = await loadConfig();
+  const attachment = config.taskAttachments.find((entry) => entry.id === id);
+  if (!attachment) {
+    return config;
+  }
+
+  config.taskAttachments = config.taskAttachments.filter((entry) => entry.id !== id);
+  await unlinkTaskAttachment(attachment);
+  return saveConfig(config);
+}
+
+export async function clearTaskAttachments(projectPath?: string): Promise<ViewcodexConfig> {
+  const config = await loadConfig();
+  const removing = projectPath
+    ? config.taskAttachments.filter((attachment) => attachment.projectPath === projectPath)
+    : config.taskAttachments;
+  config.taskAttachments = projectPath
+    ? config.taskAttachments.filter((attachment) => attachment.projectPath !== projectPath)
+    : [];
+
+  await Promise.all(removing.map((attachment) => unlinkTaskAttachment(attachment)));
+  return saveConfig(config);
 }
 
 export async function recordSessionHistory(entry: SessionHistoryEntry): Promise<ViewcodexConfig> {
@@ -572,6 +688,12 @@ function normalizeConfig(raw: Partial<ViewcodexConfig>): ViewcodexConfig {
     },
     promptMemories: Array.isArray(raw.promptMemories) ? raw.promptMemories.map(normalizePromptMemory) : [],
     sessionHistory: Array.isArray(raw.sessionHistory) ? raw.sessionHistory.map(normalizeSessionHistoryEntry) : [],
+    taskAttachments: capTaskAttachments(
+      Array.isArray(raw.taskAttachments) ? raw.taskAttachments.map(normalizeTaskAttachment) : [],
+    ),
+    taskTemplates: Array.isArray(raw.taskTemplates)
+      ? raw.taskTemplates.map(normalizeTaskTemplate).slice(0, maxTaskTemplates)
+      : defaultConfig.taskTemplates,
     startupDocSummaryCache: raw.startupDocSummaryCache ?? {},
     projects,
     selectedProjectPath,
@@ -615,6 +737,81 @@ function normalizeSessionHistoryEntry(entry: Partial<SessionHistoryEntry>): Sess
     endedAt: entry.endedAt ?? entry.startedAt ?? new Date().toISOString(),
     exitCode: typeof entry.exitCode === 'number' ? entry.exitCode : null,
   };
+}
+
+function normalizeTaskAttachment(attachment: Partial<TaskAttachment>): TaskAttachment {
+  return {
+    id: attachment.id || randomUUID(),
+    projectPath: attachment.projectPath ?? '',
+    path: attachment.path ?? '',
+    originalName: attachment.originalName ?? path.basename(attachment.path ?? '附件'),
+    kind: attachment.kind === 'image' ? 'image' : 'document',
+    note: attachment.note ?? '',
+    createdAt: attachment.createdAt ?? new Date().toISOString(),
+  };
+}
+
+function normalizeTaskTemplate(template: Partial<TaskTemplate>): TaskTemplate {
+  return {
+    id: template.id || randomUUID(),
+    title: template.title?.trim() || '未命名模板',
+    prompt: template.prompt ?? '',
+  };
+}
+
+function capTaskAttachments(attachments: TaskAttachment[]): TaskAttachment[] {
+  const byProject = new Map<string, TaskAttachment[]>();
+  for (const attachment of attachments) {
+    const entries = byProject.get(attachment.projectPath) ?? [];
+    entries.push(attachment);
+    byProject.set(attachment.projectPath, entries);
+  }
+
+  return [...byProject.values()].flatMap((entries) =>
+    entries
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .slice(0, maxTaskAttachmentsPerProject),
+  );
+}
+
+async function cleanupRemovedTaskAttachments(
+  previousAttachments: TaskAttachment[],
+  nextAttachments: TaskAttachment[],
+): Promise<void> {
+  const nextIds = new Set(nextAttachments.map((attachment) => attachment.id));
+  const removed = previousAttachments.filter((attachment) => !nextIds.has(attachment.id));
+  await Promise.all(removed.map((attachment) => unlinkTaskAttachment(attachment)));
+}
+
+async function unlinkTaskAttachment(attachment: TaskAttachment): Promise<void> {
+  const absolutePath = path.join(attachment.projectPath, attachment.path);
+  if (!isPathInside(attachment.projectPath, absolutePath)) {
+    return;
+  }
+
+  await fs.unlink(absolutePath).catch((error) => {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+  });
+}
+
+function getTaskAttachmentKind(filePath: string): TaskAttachment['kind'] {
+  const extension = path.extname(filePath).toLowerCase();
+  if (imageAttachmentExtensions.has(extension)) {
+    return 'image';
+  }
+  if (documentAttachmentExtensions.has(extension)) {
+    return 'document';
+  }
+
+  throw new Error('附件仅支持图片 png/jpg/jpeg/webp/gif 和文档 md/mdx/txt/pdf');
+}
+
+function sanitizeAttachmentFileName(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase();
+  const baseName = path.basename(fileName, extension).replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return `${baseName || 'attachment'}${extension}`;
 }
 
 function mergeUnique(primary: string[] | undefined, fallback: string[]): string[] {

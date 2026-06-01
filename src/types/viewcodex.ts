@@ -65,6 +65,22 @@ export type SessionHistoryEntry = {
   exitCode: number | null;
 };
 
+export type TaskAttachment = {
+  id: string;
+  projectPath: string;
+  path: string;
+  originalName: string;
+  kind: 'image' | 'document';
+  note: string;
+  createdAt: string;
+};
+
+export type TaskTemplate = {
+  id: string;
+  title: string;
+  prompt: string;
+};
+
 export type GptConfigFile = {
   path: string;
   content: string;
@@ -106,6 +122,8 @@ export type ViewcodexConfig = {
   teamRolePrompts: TeamRolePrompts;
   promptMemories: PromptMemory[];
   sessionHistory: SessionHistoryEntry[];
+  taskAttachments: TaskAttachment[];
+  taskTemplates: TaskTemplate[];
   startupDocSummaryCache: StartupDocSummaryCache;
 };
 
@@ -188,6 +206,10 @@ export type ViewcodexApi = {
   addPromptMemory: (title: string, content: string) => Promise<ViewcodexConfig>;
   updatePromptMemory: (id: string, title: string, content: string) => Promise<ViewcodexConfig>;
   removePromptMemory: (id: string) => Promise<ViewcodexConfig>;
+  selectTaskAttachments: (projectPath: string) => Promise<ViewcodexConfig>;
+  updateTaskAttachmentNote: (id: string, note: string) => Promise<ViewcodexConfig>;
+  removeTaskAttachment: (id: string) => Promise<ViewcodexConfig>;
+  clearTaskAttachments: (projectPath?: string) => Promise<ViewcodexConfig>;
   readGptConfig: () => Promise<GptConfigFile>;
   writeGptConfig: (content: string) => Promise<GptConfigFile>;
   setProjectPromptDraft: (projectPath: string, promptDraft: string) => Promise<ViewcodexConfig>;

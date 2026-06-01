@@ -10,7 +10,9 @@ import {
   addModel,
   addPromptMemory,
   addStartupDocs,
+  addTaskAttachments,
   clearSessionHistory,
+  clearTaskAttachments,
   createStartupDoc,
   getStartupDocContext,
   listAvailableSkills,
@@ -22,6 +24,7 @@ import {
   removeModel,
   removePromptMemory,
   removeStartupDoc,
+  removeTaskAttachment,
   selectExistingProject,
   setCodexCliPath,
   setCommitAfterTask,
@@ -32,6 +35,7 @@ import {
   type ProjectRunConfig,
   type TaskMode,
   type TeamRolePrompts,
+  updateTaskAttachmentNote,
   upsertProject,
   writeSessionHandoff,
   writeStartupDocContent,
@@ -152,6 +156,37 @@ ipcMain.handle('config:update-prompt-memory', (_event, id: string, title: string
 
 ipcMain.handle('config:remove-prompt-memory', (_event, id: string) => {
   return removePromptMemory(id);
+});
+
+ipcMain.handle('attachments:select', async (_event, projectPath: string) => {
+  const result = await dialog.showOpenDialog({
+    title: '选择任务附件',
+    defaultPath: projectPath,
+    filters: [
+      { name: '图片和文档', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'md', 'mdx', 'txt', 'pdf'] },
+      { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
+      { name: '文档', extensions: ['md', 'mdx', 'txt', 'pdf'] },
+    ],
+    properties: ['openFile', 'multiSelections'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return loadConfig();
+  }
+
+  return addTaskAttachments(projectPath, result.filePaths);
+});
+
+ipcMain.handle('attachments:update-note', (_event, id: string, note: string) => {
+  return updateTaskAttachmentNote(id, note);
+});
+
+ipcMain.handle('attachments:remove', (_event, id: string) => {
+  return removeTaskAttachment(id);
+});
+
+ipcMain.handle('attachments:clear', (_event, projectPath?: string) => {
+  return clearTaskAttachments(projectPath);
 });
 
 ipcMain.handle('gpt-config:read', () => {

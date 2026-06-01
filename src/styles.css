@@ -509,6 +509,57 @@ button:disabled {
   margin: -6px 0 8px;
 }
 
+.dashboard-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dashboard-metric {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 13px;
+}
+
+.dashboard-metric span,
+.dashboard-metric small,
+.dashboard-panel h3 {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dashboard-metric strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-panel {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.dashboard-panel h3 {
+  margin: 0 0 8px;
+}
+
 .gpt-config-editor,
 .prompt-memory-editor textarea {
   width: 100%;
@@ -959,8 +1010,8 @@ button:disabled {
 .prompt-dock textarea {
   display: block;
   width: 100%;
-  min-height: 78px;
-  max-height: 110px;
+  min-height: 72px;
+  max-height: 108px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -968,6 +1019,86 @@ button:disabled {
   outline: none;
   padding: 12px;
   resize: vertical;
+}
+
+.attachment-tray {
+  border-top: 1px solid var(--line);
+  background: rgba(243, 244, 239, 0.72);
+  padding: 10px;
+}
+
+.attachment-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.attachment-tray-header span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attachment-tray-header button,
+.attachment-row button {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 8px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.attachment-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) minmax(140px, 240px) auto;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.attachment-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.attachment-row strong,
+.attachment-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-row strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.attachment-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.attachment-row input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  padding: 6px 8px;
 }
 
 .read-result-panel {

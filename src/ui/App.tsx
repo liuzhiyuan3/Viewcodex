@@ -4,6 +4,8 @@ import {
   FilePlus2,
   FolderOpen,
   GitCommitHorizontal,
+  LayoutDashboard,
+  Paperclip,
   Play,
   PanelLeftClose,
   PanelLeftOpen,
@@ -31,6 +33,7 @@ import type {
   StartupCheckResult,
   StartupDocContextResult,
   StartupDocReadResult,
+  TaskAttachment,
   TaskMode,
   TeamRolePrompts,
   TerminalRuntimeSession,
@@ -75,6 +78,14 @@ const fallbackConfig: ViewcodexConfig = {
   commitAfterTask: false,
   promptMemories: [],
   sessionHistory: [],
+  taskAttachments: [],
+  taskTemplates: [
+    { id: 'fix-bug', title: '修复 Bug', prompt: '请调查并修复这个问题，完成后说明根因、改动文件和验证结果：\n\n' },
+    { id: 'add-feature', title: '添加功能', prompt: '请实现以下功能，保持改动清晰，并补充必要验证：\n\n' },
+    { id: 'ui-polish', title: '优化界面', prompt: '请优化这个界面体验，保持风格一致，检查布局、间距、状态和响应式表现：\n\n' },
+    { id: 'code-review', title: '代码审查', prompt: '请做一次代码审查，优先列出 bug、风险、回归点和缺失测试：\n\n' },
+    { id: 'write-tests', title: '补充测试', prompt: '请为以下行为补充测试，并运行相关验证：\n\n' },
+  ],
   startupDocSummaryCache: {},
   teamRolePrompts: {
     planner:
@@ -92,7 +103,7 @@ const fallbackSkills: SkillOption[] = [
   { name: 'code-review', path: '' },
 ];
 
-type WorkspaceView = 'cli' | 'team' | 'docs' | 'config';
+type WorkspaceView = 'dashboard' | 'cli' | 'team' | 'docs' | 'config';
 
 type ProjectStartupCheck = StartupCheckResult & {
   projectPath: string;
@@ -259,7 +270,14 @@ export function App() {
     startupDocContext?.projectPath === selectedProject?.path && startupDocContext.taskMode === selectedTaskMode
       ? startupDocContext
       : null;
-  const promptTokenEstimate = estimateTokens(composePromptWithStartupContext(prompt, visibleStartupDocContext?.context ?? ''));
+  const taskAttachmentsForProject = config.taskAttachments.filter(
+    (attachment) => attachment.projectPath === selectedProject?.path,
+  );
+  const taskAttachmentContext = buildTaskAttachmentContext(taskAttachmentsForProject);
+  const composedStartupContext = [visibleStartupDocContext?.context ?? '', taskAttachmentContext]
+    .filter((entry) => entry.trim())
+    .join('\n\n');
+  const promptTokenEstimate = estimateTokens(composePromptWithStartupContext(prompt, composedStartupContext));
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(Date.now()), 30_000);
@@ -691,6 +709,75 @@ export function App() {
     setStatus(`已插入 Prompt 记忆：${memory.title}`);
   }
 
+  function insertTaskTemplate(id: string) {
+    const template = config.taskTemplates.find((entry) => entry.id === id);
+    if (!template) {
+      return;
+    }
+
+    setPrompt((current) => [template.prompt.trim(), current.trim()].filter(Boolean).join('\n\n'));
+    setStatus(`已使用任务模板：${template.title}`);
+  }
+
+  async function selectTaskAttachments() {
+    if (!selectedProject || !window.viewcodex) {
+      setError(!window.viewcodex ? '当前环境不是 Electron 窗口，无法选择附件。' : '请先选择项目。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.selectTaskAttachments(selectedProject.path);
+      setConfig(nextConfig);
+      setStatus('任务附件已更新。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function updateTaskAttachmentNote(id: string, note: string) {
+    if (!window.viewcodex) {
+      return;
+    }
+
+    try {
+      const nextConfig = await window.viewcodex.updateTaskAttachmentNote(id, note);
+      setConfig(nextConfig);
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function removeTaskAttachment(id: string) {
+    if (!window.viewcodex) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.removeTaskAttachment(id);
+      setConfig(nextConfig);
+      setStatus('任务附件已移除。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function clearCurrentProjectTaskAttachments() {
+    if (!selectedProject || !window.viewcodex) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.clearTaskAttachments(selectedProject.path);
+      setConfig(nextConfig);
+      setStatus('任务附件已清空。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
   function applyRememberedProjectState(nextConfig: ViewcodexConfig, projectPath: string | null) {
     const preferences = getProjectPreferences(nextConfig, projectPath);
     setSelectedModel(preferences.model);
@@ -950,11 +1037,17 @@ export function App() {
       setStartupDocContext({ ...docContext, projectPath: startupConfirmation.projectPath });
       setSessionHandoff({ path: docContext.handoff?.path ?? '', exists: false, content: null, createdAt: null });
       setDocsResult(docContext.docs);
-      const startupPrompt = composePromptWithStartupContext(prompt, docContext.context);
+      const attachments = config.taskAttachments.filter(
+        (attachment) => attachment.projectPath === startupConfirmation.projectPath,
+      );
+      const startupContext = [docContext.context, buildTaskAttachmentContext(attachments)]
+        .filter((entry) => entry.trim())
+        .join('\n\n');
+      const startupPrompt = composePromptWithStartupContext(prompt, startupContext);
       await startCodexTerminal(project, 'solo', startupPrompt);
       setStartupConfirmation(null);
       setStatus(
-        `已按${formatTaskMode(selectedTaskMode)}模式读取 ${docContext.docs.filter((doc) => doc.exists).length} 份启动文档，预计 ${estimateTokens(startupPrompt)} tokens。`,
+        `已按${formatTaskMode(selectedTaskMode)}模式读取 ${docContext.docs.filter((doc) => doc.exists).length} 份启动文档和 ${attachments.length} 个附件，预计 ${estimateTokens(startupPrompt)} tokens。`,
       );
       return true;
     } catch (caughtError) {
@@ -1493,6 +1586,13 @@ export function App() {
           </div>
           <div className="topbar-actions">
             <button
+              className={`workspace-tab ${activeView === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setActiveView('dashboard')}
+            >
+              <LayoutDashboard size={16} />
+              工作台
+            </button>
+            <button
               className={`workspace-tab ${activeView === 'cli' ? 'active' : ''}`}
               onClick={() => setActiveView('cli')}
             >
@@ -1547,6 +1647,82 @@ export function App() {
             <span className={visibleStartupCheck.docs.every((doc) => !doc.required || doc.exists) ? 'result-ok' : 'result-error'}>
               文档 {visibleStartupCheck.docs.filter((doc) => doc.exists).length}/{visibleStartupCheck.docs.length}
             </span>
+          </section>
+        ) : null}
+
+        {activeView === 'dashboard' ? (
+          <section className="workspace-view dashboard-view">
+            <div className="panel-title-row">
+              <h2>项目工作台</h2>
+              <div className="compact-actions">
+                <button onClick={() => void refreshWorkspaceStatus()}>
+                  <RefreshCw size={15} />
+                  刷新
+                </button>
+              </div>
+            </div>
+            <div className="dashboard-grid">
+              <DashboardMetric
+                label="启动文档"
+                value={`${selectedProject ? selectedProject.startupDocs.required.length + selectedProject.startupDocs.optional.length : 0}`}
+                detail={`必读 ${selectedProject?.startupDocs.required.length ?? 0} · 可选 ${selectedProject?.startupDocs.optional.length ?? 0}`}
+              />
+              <DashboardMetric
+                label="任务附件"
+                value={`${taskAttachmentsForProject.length}`}
+                detail={taskAttachmentsForProject.length > 0 ? '启动时随 prompt 发送' : '暂无'}
+              />
+              <DashboardMetric
+                label="最近会话"
+                value={`${sessionHistoryForProject.length}`}
+                detail={activeSoloSession?.status === 'running' ? 'Solo 运行中' : 'Solo 未运行'}
+              />
+              <DashboardMetric
+                label="上下文"
+                value={formatContextLength(selectedContextLengthTokens)}
+                detail={`当前估算 ${formatTokenCount(promptTokenEstimate)}`}
+              />
+            </div>
+            <div className="dashboard-columns">
+              <section className="dashboard-panel">
+                <h3>运行状态</h3>
+                <div className="health-row">
+                  <span className={activeSoloSession?.status === 'running' ? 'result-ok' : 'result-error'}>
+                    Solo
+                  </span>
+                  <strong>{activeSoloSession?.status === 'running' ? '运行中' : '未启动'}</strong>
+                  <small>{activeSoloSession?.command ?? '无命令'}</small>
+                </div>
+                <div className="health-row">
+                  <span className={sessionHandoff?.exists ? 'result-ok' : 'result-error'}>交接</span>
+                  <strong>{sessionHandoff?.exists ? '待读取' : '无'}</strong>
+                  <small>{sessionHandoff?.createdAt ? formatDateTime(sessionHandoff.createdAt) : '下一次启动会自动检查'}</small>
+                </div>
+                <div className="health-row">
+                  <span className={selectedSkill ? 'result-ok' : 'result-error'}>Skill</span>
+                  <strong>{selectedSkill || '不使用'}</strong>
+                  <small>{formatTaskMode(selectedTaskMode)}模式</small>
+                </div>
+              </section>
+              <section className="dashboard-panel">
+                <h3>Git</h3>
+                <div className="health-row">
+                  <span className={gitRepositoryPath ? 'result-ok' : 'result-error'}>仓库</span>
+                  <strong>{gitRepositoryPath ? '已配置' : '未配置'}</strong>
+                  <small>{gitRepositoryPath || selectedProject?.path || '未选择项目'}</small>
+                </div>
+                <div className="health-row">
+                  <span className={gitRemoteUrl ? 'result-ok' : 'result-error'}>Origin</span>
+                  <strong>{gitRemoteUrl ? '已填写' : '未填写'}</strong>
+                  <small>{gitRemoteUrl || '需要用户或检测提供远程仓库 URL'}</small>
+                </div>
+                <div className="health-row">
+                  <span className={gitBranchMode === 'new' ? 'result-ok' : 'result-error'}>分支</span>
+                  <strong>{gitBranchMode === 'new' ? '创建任务分支' : '沿用当前分支'}</strong>
+                  <small>{gitBranchMode === 'new' ? gitBranchName : gitCurrentBranch ?? '未检测'}</small>
+                </div>
+              </section>
+            </div>
           </section>
         ) : null}
 
@@ -1848,6 +2024,28 @@ export function App() {
                     ))}
                   </select>
                 </label>
+                <label>
+                  <span>模板</span>
+                  <select
+                    value=""
+                    onChange={(event) => {
+                      if (event.target.value) {
+                        insertTaskTemplate(event.target.value);
+                      }
+                    }}
+                  >
+                    <option value="">选择任务模板</option>
+                    {config.taskTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button onClick={() => void selectTaskAttachments()}>
+                  <Paperclip size={14} />
+                  附件
+                </button>
                 <button onClick={() => void runStartupCheck()}>
                   <RefreshCw size={14} />
                   检查
@@ -1866,6 +2064,24 @@ export function App() {
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
               />
+              {taskAttachmentsForProject.length > 0 ? (
+                <div className="attachment-tray">
+                  <div className="attachment-tray-header">
+                    <span>{taskAttachmentsForProject.length} 个任务附件</span>
+                    <button onClick={() => void clearCurrentProjectTaskAttachments()}>清空</button>
+                  </div>
+                  <div className="attachment-list">
+                    {taskAttachmentsForProject.map((attachment) => (
+                      <TaskAttachmentRow
+                        attachment={attachment}
+                        key={attachment.id}
+                        onRemove={removeTaskAttachment}
+                        onUpdateNote={updateTaskAttachmentNote}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
             {visibleSoloSessions.length > 0 ? (
               <div className="session-list">
@@ -2288,6 +2504,45 @@ function ProjectRow({
   );
 }
 
+function DashboardMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="dashboard-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function TaskAttachmentRow({
+  attachment,
+  onRemove,
+  onUpdateNote,
+}: {
+  attachment: TaskAttachment;
+  onRemove: (id: string) => Promise<void>;
+  onUpdateNote: (id: string, note: string) => Promise<void>;
+}) {
+  return (
+    <div className="attachment-row">
+      <Paperclip size={15} />
+      <div>
+        <strong>{attachment.originalName}</strong>
+        <small>
+          {attachment.kind === 'image' ? '图片' : '文档'} · {attachment.path}
+        </small>
+      </div>
+      <input
+        aria-label={`${attachment.originalName} 备注`}
+        placeholder="备注"
+        value={attachment.note}
+        onChange={(event) => void onUpdateNote(attachment.id, event.target.value)}
+      />
+      <button onClick={() => void onRemove(attachment.id)}>移除</button>
+    </div>
+  );
+}
+
 function ContextUsageMeter({ session }: { session: CodexSessionView }) {
   const percent = Math.min(100, Math.round((session.promptTokenEstimate / session.contextLengthTokens) * 100));
 
@@ -2416,6 +2671,25 @@ function composePromptWithStartupContext(prompt: string, startupContext: string,
   }
 
   return `${trimmedContext}\n\n---\n\n${promptLabel}：\n${trimmedPrompt || '请先阅读上述项目文档，等待我的下一步需求。'}`;
+}
+
+function buildTaskAttachmentContext(attachments: TaskAttachment[]): string {
+  if (attachments.length === 0) {
+    return '';
+  }
+
+  return [
+    '## 本次任务附件',
+    '以下文件已复制到当前项目目录，Codex 可以按路径读取；图片附件请结合用户备注判断使用方式。',
+    ...attachments.map((attachment) =>
+      [
+        `- 路径：${attachment.path}`,
+        `  类型：${attachment.kind === 'image' ? '图片' : '文档'}`,
+        `  原始文件名：${attachment.originalName}`,
+        `  用户备注：${attachment.note.trim() || '无'}`,
+      ].join('\n'),
+    ),
+  ].join('\n');
 }
 
 function estimateTokens(text: string): number {

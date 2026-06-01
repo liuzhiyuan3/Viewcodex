@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('viewcodex', {
   updatePromptMemory: (id, title, content) =>
     ipcRenderer.invoke('config:update-prompt-memory', id, title, content),
   removePromptMemory: (id) => ipcRenderer.invoke('config:remove-prompt-memory', id),
+  selectTaskAttachments: (projectPath) => ipcRenderer.invoke('attachments:select', projectPath),
+  updateTaskAttachmentNote: (id, note) => ipcRenderer.invoke('attachments:update-note', id, note),
+  removeTaskAttachment: (id) => ipcRenderer.invoke('attachments:remove', id),
+  clearTaskAttachments: (projectPath) => ipcRenderer.invoke('attachments:clear', projectPath),
   readGptConfig: () => ipcRenderer.invoke('gpt-config:read'),
   writeGptConfig: (content) => ipcRenderer.invoke('gpt-config:write', content),
   setProjectPromptDraft: (projectPath, promptDraft) =>
