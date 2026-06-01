@@ -192,9 +192,25 @@ macOS 打包：
 npm run dist:mac
 ```
 
+Windows 打包：
+
+```bash
+npm run dist:win
+```
+
+只打 Windows x64：
+
+```bash
+npm run dist:win:x64
+```
+
+在 Apple Silicon Mac 上交叉打 Windows x64 包时，脚本会跳过 native rebuild，并使用 `node-pty` 自带的 Windows 预构建二进制。正式发布 Windows 版本前，仍建议在真实 Windows 机器上安装并启动测试一次。
+
 打包产物会输出到 `release/`，该目录不会提交到 Git。
 
 注意：Viewcodex 依赖本机 Codex CLI。打包后的 App 如果检测不到 `codex`，请在配置页填写 Codex CLI 的完整路径，例如 `/opt/homebrew/bin/codex`。
+
+Windows 用户如果检测不到 `codex` 或 `git`，请在配置页填写 Codex CLI 的完整路径，或确认 `codex.cmd`、`git.exe` 所在目录已经加入系统 `Path`。Viewcodex 会按 Windows `PATHEXT` 查找 `codex.cmd`、`codex.exe`、`git.exe` 等命令。
 
 ## 常用命令
 

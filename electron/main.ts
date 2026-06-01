@@ -315,7 +315,7 @@ ipcMain.handle('startup:check', async (_event, projectPath: string): Promise<Sta
 
   try {
     const config = await loadConfig();
-    await execFileAsync(config.codexCliPath, ['--version']);
+    await execCommand(config.codexCliPath, ['--version']);
   } catch {
     codexAvailable = false;
     errors.push('当前环境无法执行 Codex CLI');
@@ -384,13 +384,14 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
   }
 
   const config = await loadConfig();
-  const command = [config.codexCliPath, ...baseArgs, prompt ? '<prompt>' : ''].filter(Boolean).join(' ');
-  const terminal = spawn(config.codexCliPath, args, {
+  const codexCommand = await resolveCommand(config.codexCliPath);
+  const command = [codexCommand, ...baseArgs, prompt ? '<prompt>' : ''].filter(Boolean).map(formatCommandPart).join(' ');
+  const terminal = spawn(codexCommand, args, {
     name: 'xterm-256color',
     cols: 96,
     rows: 28,
     cwd: options.projectPath,
-    env: process.env,
+    env: getTerminalEnv(),
   });
 
   terminals.set(sessionId, terminal);
@@ -638,10 +639,10 @@ async function detectGitConfig(projectPath: string): Promise<DetectedGitConfig> 
   }
 
   const [remoteUrl, currentBranch] = await Promise.all([
-    execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: repositoryPath })
+    execCommand('git', ['remote', 'get-url', 'origin'], { cwd: repositoryPath })
       .then((result) => result.stdout.trim())
       .catch(() => ''),
-    execFileAsync('git', ['branch', '--show-current'], { cwd: repositoryPath })
+    execCommand('git', ['branch', '--show-current'], { cwd: repositoryPath })
       .then((result) => result.stdout.trim() || null)
       .catch(() => null),
   ]);
@@ -656,7 +657,7 @@ async function detectGitConfig(projectPath: string): Promise<DetectedGitConfig> 
 async function resolveGitRepositoryPath(projectPath: string, configuredPath: string | null): Promise<string | null> {
   const candidate = configuredPath?.trim() || projectPath;
   try {
-    const result = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: candidate });
+    const result = await execCommand('git', ['rev-parse', '--show-toplevel'], { cwd: candidate });
     return result.stdout.trim() || null;
   } catch {
     return null;
@@ -673,11 +674,11 @@ async function prepareTaskBranch(repositoryPath: string | null, branchName: stri
     throw new Error('无法创建任务分支：分支名称为空');
   }
 
-  const exists = await execFileAsync('git', ['rev-parse', '--verify', normalizedBranchName], { cwd: repositoryPath })
+  const exists = await execCommand('git', ['rev-parse', '--verify', normalizedBranchName], { cwd: repositoryPath })
     .then(() => true)
     .catch(() => false);
 
-  await execFileAsync('git', exists ? ['switch', normalizedBranchName] : ['switch', '-c', normalizedBranchName], {
+  await execCommand('git', exists ? ['switch', normalizedBranchName] : ['switch', '-c', normalizedBranchName], {
     cwd: repositoryPath,
   });
 }
@@ -685,7 +686,7 @@ async function prepareTaskBranch(repositoryPath: string | null, branchName: stri
 async function ensureCodexAvailable(): Promise<void> {
   try {
     const config = await loadConfig();
-    await execFileAsync(config.codexCliPath, ['--version']);
+    await execCommand(config.codexCliPath, ['--version']);
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     throw new Error(
@@ -737,7 +738,7 @@ async function checkHealth(): Promise<HealthCheckResult> {
 
 async function checkCommand(command: string, args: string[], label: string): Promise<HealthCheckItem> {
   try {
-    const result = await execFileAsync(command, args);
+    const result = await execCommand(command, args);
     return {
       ok: true,
       label,
@@ -753,7 +754,80 @@ async function checkCommand(command: string, args: string[], label: string): Pro
 }
 
 function getRuntimePath(): string {
-  return process.env.PATH || '(empty)';
+  return process.env.PATH || process.env.Path || process.env.path || '(empty)';
+}
+
+async function execCommand(
+  command: string,
+  args: string[],
+  options: { cwd?: string } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(await resolveCommand(command), args, options);
+}
+
+async function resolveCommand(command: string): Promise<string> {
+  const trimmedCommand = command.trim();
+  if (!trimmedCommand) {
+    throw new Error('命令路径为空');
+  }
+
+  if (process.platform !== 'win32' || hasPathSeparator(trimmedCommand)) {
+    return trimmedCommand;
+  }
+
+  const candidates = getWindowsCommandCandidates(trimmedCommand);
+  const searchDirectories = getRuntimePath()
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const directory of searchDirectories) {
+    for (const candidate of candidates) {
+      const executablePath = path.join(directory, candidate);
+      if (await fileIsAccessible(executablePath)) {
+        return executablePath;
+      }
+    }
+  }
+
+  return trimmedCommand;
+}
+
+function getWindowsCommandCandidates(command: string): string[] {
+  if (path.extname(command)) {
+    return [command];
+  }
+
+  const extensions = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  return [command, ...extensions.map((extension) => `${command}${extension}`)];
+}
+
+function hasPathSeparator(command: string): boolean {
+  return command.includes('/') || command.includes('\\') || path.isAbsolute(command);
+}
+
+async function fileIsAccessible(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getTerminalEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  if (process.platform === 'win32' && env.Path && !env.PATH) {
+    env.PATH = env.Path;
+  }
+  return env;
+}
+
+function formatCommandPart(value: string): string {
+  return /\s/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
 }
 
 async function ensureConfiguredProject(projectPath: string): Promise<void> {
@@ -771,15 +845,15 @@ async function commitProjectChanges(
   pushAfterCommit: boolean,
 ): Promise<void> {
   try {
-    const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: projectPath });
+    const status = await execCommand('git', ['status', '--porcelain'], { cwd: projectPath });
     if (!status.stdout.trim()) {
       sender.send('terminal:data', sessionId, '\r\n[Viewcodex] Git 没有检测到变更，跳过自动提交。\r\n');
       return;
     }
 
     sender.send('terminal:data', sessionId, `\r\n[Viewcodex] Git 检测到变更：\r\n${status.stdout.trim()}\r\n`);
-    await execFileAsync('git', ['add', '-A'], { cwd: projectPath });
-    await execFileAsync(
+    await execCommand('git', ['add', '-A'], { cwd: projectPath });
+    await execCommand(
       'git',
       [
         'commit',
@@ -798,7 +872,7 @@ async function commitProjectChanges(
     );
     sender.send('terminal:data', sessionId, '\r\n[Viewcodex] Git 自动提交完成。\r\n');
     if (pushAfterCommit) {
-      await execFileAsync('git', ['push'], { cwd: projectPath });
+      await execCommand('git', ['push'], { cwd: projectPath });
       sender.send('terminal:data', sessionId, '\r\n[Viewcodex] Git push 完成。\r\n');
     }
   } catch (error) {
@@ -809,7 +883,7 @@ async function commitProjectChanges(
 
 async function getCommitReadiness(projectPath: string): Promise<{ ok: boolean; reason?: string }> {
   try {
-    const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: projectPath });
+    const status = await execCommand('git', ['status', '--porcelain'], { cwd: projectPath });
     if (status.stdout.trim()) {
       return { ok: false, reason: '会话开始前仓库已有未提交变更' };
     }

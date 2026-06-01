@@ -14,6 +14,8 @@
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
     "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:win:x64": "npm run build && electron-builder --win --x64 -c.npmRebuild=false",
     "postinstall": "node scripts/fix-node-pty-permissions.mjs",
     "preview": "vite preview",
     "test": "npm run build:electron && node --test tests/*.test.mjs",
