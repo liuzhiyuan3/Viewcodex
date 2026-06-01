@@ -14,9 +14,12 @@ import {
   RefreshCw,
   RotateCw,
   Save,
+  Search,
   Send,
   Square,
+  Star,
   TerminalSquare,
+  Trash2,
   Users,
   X,
 } from 'lucide-react';
@@ -83,11 +86,11 @@ const fallbackConfig: ViewcodexConfig = {
   sessionHistory: [],
   taskAttachments: [],
   taskTemplates: [
-    { id: 'fix-bug', title: '修复 Bug', prompt: '请调查并修复这个问题，完成后说明根因、改动文件和验证结果：\n\n' },
-    { id: 'add-feature', title: '添加功能', prompt: '请实现以下功能，保持改动清晰，并补充必要验证：\n\n' },
-    { id: 'ui-polish', title: '优化界面', prompt: '请优化这个界面体验，保持风格一致，检查布局、间距、状态和响应式表现：\n\n' },
-    { id: 'code-review', title: '代码审查', prompt: '请做一次代码审查，优先列出 bug、风险、回归点和缺失测试：\n\n' },
-    { id: 'write-tests', title: '补充测试', prompt: '请为以下行为补充测试，并运行相关验证：\n\n' },
+    { id: 'fix-bug', title: '修复 Bug', category: '开发', prompt: '请调查并修复这个问题，完成后说明根因、改动文件和验证结果：\n\n' },
+    { id: 'add-feature', title: '添加功能', category: '开发', prompt: '请实现以下功能，保持改动清晰，并补充必要验证：\n\n' },
+    { id: 'ui-polish', title: '优化界面', category: '界面', prompt: '请优化这个界面体验，保持风格一致，检查布局、间距、状态和响应式表现：\n\n' },
+    { id: 'code-review', title: '代码审查', category: '质量', prompt: '请做一次代码审查，优先列出 bug、风险、回归点和缺失测试：\n\n' },
+    { id: 'write-tests', title: '补充测试', category: '质量', prompt: '请为以下行为补充测试，并运行相关验证：\n\n' },
   ],
   startupDocSummaryCache: {},
   teamRolePrompts: {
@@ -179,7 +182,13 @@ export function App() {
   const [promptMemoryTitle, setPromptMemoryTitle] = useState('');
   const [promptMemoryContent, setPromptMemoryContent] = useState('');
   const [editingPromptMemoryId, setEditingPromptMemoryId] = useState<string | null>(null);
-  const [configDialog, setConfigDialog] = useState<'gpt' | 'prompt' | null>(null);
+  const [templateTitle, setTemplateTitle] = useState('');
+  const [templateCategory, setTemplateCategory] = useState('通用');
+  const [templatePrompt, setTemplatePrompt] = useState('');
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'favorite' | 'success' | 'failed'>('all');
+  const [configDialog, setConfigDialog] = useState<'gpt' | 'prompt' | 'template' | null>(null);
   const [docsResult, setDocsResult] = useState<StartupDocReadResult[]>([]);
   const [startupCheck, setStartupCheck] = useState<ProjectStartupCheck | null>(null);
   const [startupDocContext, setStartupDocContext] = useState<ProjectStartupDocContext | null>(null);
@@ -269,9 +278,27 @@ export function App() {
   const visibleSoloSessions = sessions.filter(
     (session) => session.projectPath === selectedProject?.path && session.role === 'solo',
   );
-  const sessionHistoryForProject = config.sessionHistory
-    .filter((entry) => entry.projectPath === selectedProject?.path)
-    .slice(0, 6);
+  const allSessionHistoryForProject = config.sessionHistory.filter(
+    (entry) => entry.projectPath === selectedProject?.path,
+  );
+  const sessionHistoryForProject = allSessionHistoryForProject.slice(0, 12);
+  const filteredSessionHistoryForProject = sessionHistoryForProject.filter((entry) => {
+    const matchesFilter =
+      historyFilter === 'all' ||
+      (historyFilter === 'favorite' && entry.favorite) ||
+      (historyFilter === 'success' && entry.exitCode === 0) ||
+      (historyFilter === 'failed' && entry.exitCode !== 0);
+    const normalizedSearch = historySearch.trim().toLowerCase();
+    const matchesSearch =
+      !normalizedSearch ||
+      [entry.promptPreview, entry.transcriptTail, entry.skill, entry.model, entry.role]
+        .join('\n')
+        .toLowerCase()
+        .includes(normalizedSearch);
+    return matchesFilter && matchesSearch;
+  });
+  const favoriteHistoryCount = allSessionHistoryForProject.filter((entry) => entry.favorite).length;
+  const failedHistoryCount = allSessionHistoryForProject.filter((entry) => entry.exitCode !== 0).length;
   const docIsDirty = selectedDocPath !== null && selectedDocContent !== savedDocContent;
   const selectedDocProject =
     config.projects.find((project) => project.path === selectedDocProjectPath) ?? selectedProject;
@@ -289,6 +316,17 @@ export function App() {
     .filter((entry) => entry.trim())
     .join('\n\n');
   const promptTokenEstimate = estimateTokens(composePromptWithStartupContext(prompt, composedStartupContext));
+  const contextUsagePercent =
+    selectedContextLengthTokens > 0
+      ? Math.min(100, Math.round((promptTokenEstimate / selectedContextLengthTokens) * 100))
+      : 0;
+  const startupDocCount = selectedProject
+    ? selectedProject.startupDocs.required.length + selectedProject.startupDocs.optional.length
+    : 0;
+  const missingStartupDocs = docsResult.filter((doc) => doc.required && !doc.exists).length;
+  const lastAttachment = taskAttachmentsForProject
+    .slice()
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(Date.now()), 30_000);
@@ -728,6 +766,102 @@ export function App() {
 
     setPrompt((current) => [template.prompt.trim(), current.trim()].filter(Boolean).join('\n\n'));
     setStatus(`已使用任务模板：${template.title}`);
+  }
+
+  async function saveTaskTemplate() {
+    if (!window.viewcodex) {
+      setError('当前环境不是 Electron 窗口，无法保存任务模板。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = editingTemplateId
+        ? await window.viewcodex.updateTaskTemplate(editingTemplateId, templateTitle, templateCategory, templatePrompt)
+        : await window.viewcodex.addTaskTemplate(templateTitle, templateCategory, templatePrompt);
+      setConfig(nextConfig);
+      clearTaskTemplateEditor();
+      setStatus('任务模板已保存。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function removeTaskTemplate(id: string) {
+    if (!window.viewcodex) {
+      setError('当前环境不是 Electron 窗口，无法删除任务模板。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.removeTaskTemplate(id);
+      setConfig(nextConfig);
+      if (editingTemplateId === id) {
+        clearTaskTemplateEditor();
+      }
+      setStatus('任务模板已删除。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  function editTaskTemplate(id: string) {
+    const template = config.taskTemplates.find((entry) => entry.id === id);
+    if (!template) {
+      return;
+    }
+
+    setEditingTemplateId(template.id);
+    setTemplateTitle(template.title);
+    setTemplateCategory(template.category);
+    setTemplatePrompt(template.prompt);
+  }
+
+  function clearTaskTemplateEditor() {
+    setEditingTemplateId(null);
+    setTemplateTitle('');
+    setTemplateCategory('通用');
+    setTemplatePrompt('');
+  }
+
+  function saveHistoryAsTemplate(entry: SessionHistoryEntry) {
+    setEditingTemplateId(null);
+    setTemplateTitle(entry.promptPreview.slice(0, 24) || '历史会话模板');
+    setTemplateCategory(entry.skill || '历史');
+    setTemplatePrompt(entry.promptPreview);
+    setConfigDialog('template');
+  }
+
+  async function toggleHistoryFavorite(id: string) {
+    if (!window.viewcodex) {
+      setError('当前环境不是 Electron 窗口，无法更新历史会话。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.toggleSessionHistoryFavorite(id);
+      setConfig(nextConfig);
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
+  }
+
+  async function removeHistoryEntry(id: string) {
+    if (!window.viewcodex) {
+      setError('当前环境不是 Electron 窗口，无法删除历史会话。');
+      return;
+    }
+
+    try {
+      setError(null);
+      const nextConfig = await window.viewcodex.removeSessionHistory(id);
+      setConfig(nextConfig);
+      setStatus('历史会话已删除。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
   }
 
   async function selectTaskAttachments() {
@@ -1759,7 +1893,7 @@ export function App() {
             <div className="dashboard-grid">
               <DashboardMetric
                 label="启动文档"
-                value={`${selectedProject ? selectedProject.startupDocs.required.length + selectedProject.startupDocs.optional.length : 0}`}
+                value={`${startupDocCount}`}
                 detail={`必读 ${selectedProject?.startupDocs.required.length ?? 0} · 可选 ${selectedProject?.startupDocs.optional.length ?? 0}`}
               />
               <DashboardMetric
@@ -1769,13 +1903,33 @@ export function App() {
               />
               <DashboardMetric
                 label="最近会话"
-                value={`${sessionHistoryForProject.length}`}
-                detail={activeSoloSession?.status === 'running' ? 'Solo 运行中' : 'Solo 未运行'}
+                value={`${allSessionHistoryForProject.length}`}
+                detail={`收藏 ${favoriteHistoryCount} · 失败 ${failedHistoryCount}`}
               />
               <DashboardMetric
                 label="上下文"
                 value={formatContextLength(selectedContextLengthTokens)}
-                detail={`当前估算 ${formatTokenCount(promptTokenEstimate)}`}
+                detail={`当前估算 ${formatTokenCount(promptTokenEstimate)} · ${contextUsagePercent}%`}
+              />
+              <DashboardMetric
+                label="运行会话"
+                value={`${visibleSoloSessions.filter((session) => session.status === 'running').length}`}
+                detail={activeSoloSession?.status === 'running' ? 'Solo 运行中' : 'Solo 未运行'}
+              />
+              <DashboardMetric
+                label="任务模板"
+                value={`${config.taskTemplates.length}`}
+                detail={`${new Set(config.taskTemplates.map((template) => template.category)).size} 个分类`}
+              />
+              <DashboardMetric
+                label="资源"
+                value={`${config.promptMemories.length + taskAttachmentsForProject.length}`}
+                detail={`Prompt ${config.promptMemories.length} · 附件 ${taskAttachmentsForProject.length}`}
+              />
+              <DashboardMetric
+                label="Skills"
+                value={`${availableSkills.length}`}
+                detail={selectedSkill || '当前未选择'}
               />
             </div>
             <div className="dashboard-columns">
@@ -1798,6 +1952,11 @@ export function App() {
                   <strong>{selectedSkill || '不使用'}</strong>
                   <small>{formatTaskMode(selectedTaskMode)}模式</small>
                 </div>
+                <div className="health-row">
+                  <span className={lastAttachment ? 'result-ok' : 'result-error'}>附件</span>
+                  <strong>{lastAttachment ? lastAttachment.originalName : '无'}</strong>
+                  <small>{lastAttachment ? formatDateTime(lastAttachment.createdAt) : '本项目暂无任务附件'}</small>
+                </div>
               </section>
               <section className="dashboard-panel">
                 <h3>Git</h3>
@@ -1815,6 +1974,40 @@ export function App() {
                   <span className={gitBranchMode === 'new' ? 'result-ok' : 'result-error'}>分支</span>
                   <strong>{gitBranchMode === 'new' ? '创建任务分支' : '沿用当前分支'}</strong>
                   <small>{gitBranchMode === 'new' ? gitBranchName : gitCurrentBranch ?? '未检测'}</small>
+                </div>
+              </section>
+              <section className="dashboard-panel">
+                <h3>最近任务</h3>
+                {allSessionHistoryForProject.length > 0 ? (
+                  allSessionHistoryForProject.slice(0, 5).map((entry) => (
+                    <div className="health-row" key={entry.id}>
+                      <span className={entry.exitCode === 0 ? 'result-ok' : 'result-error'}>
+                        {entry.favorite ? '收藏' : '历史'}
+                      </span>
+                      <strong>{entry.skill || entry.model || formatRoleName(entry.role as CodexRole)}</strong>
+                      <small>{formatDateTime(entry.endedAt)}</small>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty-text">暂无历史</p>
+                )}
+              </section>
+              <section className="dashboard-panel">
+                <h3>文档健康</h3>
+                <div className="health-row">
+                  <span className={missingStartupDocs === 0 ? 'result-ok' : 'result-error'}>必读</span>
+                  <strong>{missingStartupDocs === 0 ? '完整' : `缺失 ${missingStartupDocs}`}</strong>
+                  <small>{docsResult.length > 0 ? '来自最近一次读取结果' : '等待启动检查'}</small>
+                </div>
+                <div className="health-row">
+                  <span className={sessionHandoff?.exists ? 'result-ok' : 'result-error'}>交接</span>
+                  <strong>{sessionHandoff?.exists ? '待读取' : '无'}</strong>
+                  <small>{sessionHandoff?.createdAt ? formatDateTime(sessionHandoff.createdAt) : '新会话会自动读取后删除'}</small>
+                </div>
+                <div className="health-row">
+                  <span className={startupDocCount > 0 ? 'result-ok' : 'result-error'}>总数</span>
+                  <strong>{startupDocCount}</strong>
+                  <small>必读 {selectedProject?.startupDocs.required.length ?? 0} · 可选 {selectedProject?.startupDocs.optional.length ?? 0}</small>
                 </div>
               </section>
             </div>
@@ -2078,6 +2271,10 @@ export function App() {
                 <BookOpenCheck size={15} />
                 Prompt 记忆
               </button>
+              <button onClick={() => setConfigDialog('template')}>
+                <FilePlus2 size={15} />
+                任务模板
+              </button>
             </div>
           </section>
         ) : null}
@@ -2269,15 +2466,38 @@ export function App() {
                 <div className="panel-title-row session-history-title">
                   <h2>最近会话</h2>
                   <div className="compact-actions">
-                    <button disabled={sessionHistoryForProject.length === 0} onClick={() => void clearCurrentProjectSessionHistory()}>
+                    <button disabled={allSessionHistoryForProject.length === 0} onClick={() => void clearCurrentProjectSessionHistory()}>
                       <Eraser size={14} />
                       清空
                     </button>
                   </div>
                 </div>
-                {sessionHistoryForProject.length > 0 ? (
+                {allSessionHistoryForProject.length > 0 ? (
+                  <div className="history-tools">
+                    <label>
+                      <Search size={13} />
+                      <input
+                        aria-label="搜索历史会话"
+                        placeholder="搜索历史"
+                        value={historySearch}
+                        onChange={(event) => setHistorySearch(event.target.value)}
+                      />
+                    </label>
+                    <select
+                      aria-label="筛选历史会话"
+                      value={historyFilter}
+                      onChange={(event) => setHistoryFilter(event.target.value as typeof historyFilter)}
+                    >
+                      <option value="all">全部</option>
+                      <option value="favorite">收藏</option>
+                      <option value="success">成功</option>
+                      <option value="failed">失败</option>
+                    </select>
+                  </div>
+                ) : null}
+                {filteredSessionHistoryForProject.length > 0 ? (
                   <div className="session-list history-list">
-                    {sessionHistoryForProject.map((entry) => (
+                    {filteredSessionHistoryForProject.map((entry) => (
                       <div className="session-row history-row" key={entry.id}>
                         <span className="status-dot exited" />
                         <span>
@@ -2288,13 +2508,32 @@ export function App() {
                           </small>
                         </span>
                         <div className="history-actions">
+                          <button
+                            title={entry.favorite ? '取消收藏' : '收藏'}
+                            aria-label={entry.favorite ? '取消收藏' : '收藏'}
+                            className={entry.favorite ? 'favorite active' : 'favorite'}
+                            onClick={() => void toggleHistoryFavorite(entry.id)}
+                          >
+                            <Star size={12} />
+                          </button>
                           <button onClick={() => viewSessionHistory(entry)}>查看</button>
                           <button onClick={() => restoreSessionPrompt(entry)}>恢复</button>
                           <button onClick={() => void continueSessionHistory(entry)}>继续</button>
+                          <button onClick={() => saveHistoryAsTemplate(entry)}>存模板</button>
+                          <button
+                            title="删除历史"
+                            aria-label="删除历史"
+                            className="danger"
+                            onClick={() => void removeHistoryEntry(entry.id)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       </div>
                     ))}
                   </div>
+                ) : allSessionHistoryForProject.length > 0 ? (
+                  <p className="empty-text">没有匹配的历史</p>
                 ) : (
                   <p className="empty-text">暂无历史</p>
                 )}
@@ -2476,11 +2715,19 @@ export function App() {
           <section className="doc-editor config-dialog">
             <header className="doc-editor-header">
               <div>
-                <h2>{configDialog === 'gpt' ? 'GPT 配置文件' : 'Prompt 记忆'}</h2>
+                <h2>
+                  {configDialog === 'gpt'
+                    ? 'GPT 配置文件'
+                    : configDialog === 'prompt'
+                      ? 'Prompt 记忆'
+                      : '任务模板'}
+                </h2>
                 <span>
                   {configDialog === 'gpt'
                     ? (gptConfigFile?.path ?? '~/.codex/config.toml')
-                    : `${config.promptMemories.length} 条常用 Prompt`}
+                    : configDialog === 'prompt'
+                      ? `${config.promptMemories.length} 条常用 Prompt`
+                      : `${config.taskTemplates.length} 个任务模板`}
                 </span>
               </div>
               <div className="doc-editor-actions">
@@ -2495,10 +2742,18 @@ export function App() {
                       保存
                     </button>
                   </>
-                ) : (
+                ) : configDialog === 'prompt' ? (
                   <>
                     <button onClick={clearPromptMemoryEditor}>新建</button>
                     <button onClick={() => void savePromptMemory()}>
+                      <Save size={15} />
+                      保存
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={clearTaskTemplateEditor}>新建</button>
+                    <button onClick={() => void saveTaskTemplate()}>
                       <Save size={15} />
                       保存
                     </button>
@@ -2518,7 +2773,7 @@ export function App() {
                 onChange={(event) => setGptConfigDraft(event.target.value)}
                 placeholder='例如：model = "gpt-5.4"'
               />
-            ) : (
+            ) : configDialog === 'prompt' ? (
               <div className="prompt-memory-dialog">
                 <div className="prompt-memory-editor">
                   <input
@@ -2546,6 +2801,50 @@ export function App() {
                         </button>
                         <button onClick={() => insertPromptMemory(memory.id)}>插入</button>
                         <button onClick={() => void removePromptMemory(memory.id)}>删除</button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="prompt-memory-dialog">
+                <div className="prompt-memory-editor template-editor">
+                  <div className="template-editor-row">
+                    <input
+                      aria-label="模板名称"
+                      placeholder="名称，例如：修复线上问题"
+                      value={templateTitle}
+                      onChange={(event) => setTemplateTitle(event.target.value)}
+                    />
+                    <input
+                      aria-label="模板分类"
+                      placeholder="分类，例如：开发"
+                      value={templateCategory}
+                      onChange={(event) => setTemplateCategory(event.target.value)}
+                    />
+                  </div>
+                  <textarea
+                    aria-label="模板内容"
+                    placeholder="写下任务模板内容"
+                    value={templatePrompt}
+                    onChange={(event) => setTemplatePrompt(event.target.value)}
+                  />
+                </div>
+                <div className="prompt-memory-list">
+                  {config.taskTemplates.length === 0 ? (
+                    <p className="empty-text">暂无模板</p>
+                  ) : (
+                    config.taskTemplates.map((template) => (
+                      <div className="prompt-memory-row template-row" key={template.id}>
+                        <button onClick={() => editTaskTemplate(template.id)}>
+                          <span className="template-row-title">
+                            <strong>{template.title}</strong>
+                            <em>{template.category}</em>
+                          </span>
+                          <small>{template.prompt}</small>
+                        </button>
+                        <button onClick={() => insertTaskTemplate(template.id)}>插入</button>
+                        <button onClick={() => void removeTaskTemplate(template.id)}>删除</button>
                       </div>
                     ))
                   )}

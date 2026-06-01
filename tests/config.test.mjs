@@ -188,6 +188,7 @@ test('records recent session history with newest entries first', async () => {
     model: 'gpt-test',
     skill: '',
     promptPreview: 'old',
+    favorite: false,
     startedAt: '2026-01-01T00:00:00.000Z',
     endedAt: '2026-01-01T00:01:00.000Z',
     exitCode: 0,
@@ -200,6 +201,7 @@ test('records recent session history with newest entries first', async () => {
     skill: 'review',
     promptPreview: 'new',
     transcriptTail: 'last terminal lines',
+    favorite: false,
     startedAt: '2026-01-01T00:02:00.000Z',
     endedAt: '2026-01-01T00:03:00.000Z',
     exitCode: 1,
@@ -207,10 +209,53 @@ test('records recent session history with newest entries first', async () => {
 
   assert.equal(nextConfig.sessionHistory[0].id, 'new-session');
   assert.equal(nextConfig.sessionHistory[0].transcriptTail, 'last terminal lines');
+  assert.equal(nextConfig.sessionHistory[0].favorite, false);
   assert.equal(nextConfig.sessionHistory[1].id, 'old-session');
 
   const clearedConfig = await configModule.clearSessionHistory(projectPath);
   assert.equal(clearedConfig.sessionHistory.some((entry) => entry.projectPath === projectPath), false);
+});
+
+test('updates individual session history rows', async () => {
+  const projectPath = await createProject('session-history-row-actions');
+  await configModule.upsertProject(projectPath);
+
+  await configModule.recordSessionHistory({
+    id: 'favorite-session',
+    projectPath,
+    role: 'solo',
+    model: 'gpt-test',
+    skill: '',
+    promptPreview: 'keep this',
+    transcriptTail: '',
+    favorite: false,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: '2026-01-01T00:01:00.000Z',
+    exitCode: 0,
+  });
+
+  const favoritedConfig = await configModule.toggleSessionHistoryFavorite('favorite-session');
+  assert.equal(favoritedConfig.sessionHistory.find((entry) => entry.id === 'favorite-session')?.favorite, true);
+
+  const removedConfig = await configModule.removeSessionHistory('favorite-session');
+  assert.equal(removedConfig.sessionHistory.some((entry) => entry.id === 'favorite-session'), false);
+});
+
+test('creates updates and removes task templates with categories', async () => {
+  const addedConfig = await configModule.addTaskTemplate('发布检查', '发布', '检查构建、测试和变更摘要');
+  const template = addedConfig.taskTemplates.find((entry) => entry.title === '发布检查');
+
+  assert.equal(template?.category, '发布');
+  assert.equal(template?.prompt, '检查构建、测试和变更摘要');
+
+  const updatedConfig = await configModule.updateTaskTemplate(template.id, '发布前检查', '质量', '运行完整验证');
+  const updated = updatedConfig.taskTemplates.find((entry) => entry.id === template.id);
+  assert.equal(updated?.title, '发布前检查');
+  assert.equal(updated?.category, '质量');
+  assert.equal(updated?.prompt, '运行完整验证');
+
+  const removedConfig = await configModule.removeTaskTemplate(template.id);
+  assert.equal(removedConfig.taskTemplates.some((entry) => entry.id === template.id), false);
 });
 
 test('copies task attachments into the project and clears them', async () => {

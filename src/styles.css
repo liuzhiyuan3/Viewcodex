@@ -604,6 +604,12 @@ button:disabled {
   gap: 8px;
 }
 
+.template-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 8px;
+}
+
 .prompt-memory-editor textarea {
   min-height: 96px;
 }
@@ -656,6 +662,30 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.template-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.template-row-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-row-title em {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  padding: 2px 7px;
 }
 
 .doc-row {
@@ -752,7 +782,7 @@ button:disabled {
 }
 
 .history-list {
-  max-height: 118px;
+  max-height: 190px;
   overflow: auto;
 }
 
@@ -772,9 +802,45 @@ button:disabled {
   grid-template-columns: 10px minmax(0, 1fr);
 }
 
+.history-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 6px;
+}
+
+.history-tools label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 0 7px;
+}
+
+.history-tools input,
+.history-tools select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  padding: 6px 8px;
+}
+
+.history-tools label input {
+  border: 0;
+  padding-left: 0;
+}
+
 .history-actions {
   grid-column: 2 / -1;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
 }
@@ -792,6 +858,23 @@ button:disabled {
 
 .history-actions button:hover {
   background: var(--surface-muted);
+}
+
+.history-actions button.favorite {
+  width: 25px;
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.history-actions button.favorite.active {
+  border-color: rgba(166, 108, 24, 0.44);
+  background: #f4ead7;
+  color: var(--warning);
+}
+
+.history-actions button.danger {
+  color: var(--danger);
 }
 
 .session-row strong {

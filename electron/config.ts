@@ -46,6 +46,7 @@ export type SessionHistoryEntry = {
   skill: string;
   promptPreview: string;
   transcriptTail: string;
+  favorite: boolean;
   startedAt: string;
   endedAt: string;
   exitCode: number | null;
@@ -64,6 +65,7 @@ export type TaskAttachment = {
 export type TaskTemplate = {
   id: string;
   title: string;
+  category: string;
   prompt: string;
 };
 
@@ -165,11 +167,11 @@ const defaultConfig: ViewcodexConfig = {
   sessionHistory: [],
   taskAttachments: [],
   taskTemplates: [
-    { id: 'fix-bug', title: '修复 Bug', prompt: '请调查并修复这个问题，完成后说明根因、改动文件和验证结果：\n\n' },
-    { id: 'add-feature', title: '添加功能', prompt: '请实现以下功能，保持改动清晰，并补充必要验证：\n\n' },
-    { id: 'ui-polish', title: '优化界面', prompt: '请优化这个界面体验，保持风格一致，检查布局、间距、状态和响应式表现：\n\n' },
-    { id: 'code-review', title: '代码审查', prompt: '请做一次代码审查，优先列出 bug、风险、回归点和缺失测试：\n\n' },
-    { id: 'write-tests', title: '补充测试', prompt: '请为以下行为补充测试，并运行相关验证：\n\n' },
+    { id: 'fix-bug', title: '修复 Bug', category: '开发', prompt: '请调查并修复这个问题，完成后说明根因、改动文件和验证结果：\n\n' },
+    { id: 'add-feature', title: '添加功能', category: '开发', prompt: '请实现以下功能，保持改动清晰，并补充必要验证：\n\n' },
+    { id: 'ui-polish', title: '优化界面', category: '界面', prompt: '请优化这个界面体验，保持风格一致，检查布局、间距、状态和响应式表现：\n\n' },
+    { id: 'code-review', title: '代码审查', category: '质量', prompt: '请做一次代码审查，优先列出 bug、风险、回归点和缺失测试：\n\n' },
+    { id: 'write-tests', title: '补充测试', category: '质量', prompt: '请为以下行为补充测试，并运行相关验证：\n\n' },
   ],
   startupDocSummaryCache: {},
   teamRolePrompts: {
@@ -327,6 +329,48 @@ export async function removePromptMemory(id: string): Promise<ViewcodexConfig> {
   });
 }
 
+export async function addTaskTemplate(
+  title: string,
+  category: string,
+  prompt: string,
+): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    const template = normalizeTaskTemplateInput(title, category, prompt);
+    config.taskTemplates = [
+      {
+        id: randomUUID(),
+        ...template,
+      },
+      ...config.taskTemplates,
+    ].slice(0, maxTaskTemplates);
+  });
+}
+
+export async function updateTaskTemplate(
+  id: string,
+  title: string,
+  category: string,
+  prompt: string,
+): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    const template = config.taskTemplates.find((entry) => entry.id === id);
+    if (!template) {
+      throw new Error('任务模板不存在');
+    }
+
+    const nextTemplate = normalizeTaskTemplateInput(title, category, prompt);
+    template.title = nextTemplate.title;
+    template.category = nextTemplate.category;
+    template.prompt = nextTemplate.prompt;
+  });
+}
+
+export async function removeTaskTemplate(id: string): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    config.taskTemplates = config.taskTemplates.filter((entry) => entry.id !== id);
+  });
+}
+
 export async function addTaskAttachments(
   projectPath: string,
   filePaths: string[],
@@ -426,6 +470,23 @@ export async function clearSessionHistory(projectPath?: string): Promise<Viewcod
     config.sessionHistory = projectPath
       ? config.sessionHistory.filter((entry) => entry.projectPath !== projectPath)
       : [];
+  });
+}
+
+export async function toggleSessionHistoryFavorite(id: string): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    const entry = config.sessionHistory.find((item) => item.id === id);
+    if (!entry) {
+      throw new Error('历史会话不存在');
+    }
+
+    entry.favorite = !entry.favorite;
+  });
+}
+
+export async function removeSessionHistory(id: string): Promise<ViewcodexConfig> {
+  return updateConfig((config) => {
+    config.sessionHistory = config.sessionHistory.filter((entry) => entry.id !== id);
   });
 }
 
@@ -735,6 +796,7 @@ function normalizeSessionHistoryEntry(entry: Partial<SessionHistoryEntry>): Sess
     skill: entry.skill ?? '',
     promptPreview: entry.promptPreview ?? '',
     transcriptTail: entry.transcriptTail ?? '',
+    favorite: entry.favorite ?? false,
     startedAt: entry.startedAt ?? new Date().toISOString(),
     endedAt: entry.endedAt ?? entry.startedAt ?? new Date().toISOString(),
     exitCode: typeof entry.exitCode === 'number' ? entry.exitCode : null,
@@ -757,7 +819,29 @@ function normalizeTaskTemplate(template: Partial<TaskTemplate>): TaskTemplate {
   return {
     id: template.id || randomUUID(),
     title: template.title?.trim() || '未命名模板',
+    category: template.category?.trim() || '通用',
     prompt: template.prompt ?? '',
+  };
+}
+
+function normalizeTaskTemplateInput(
+  title: string,
+  category: string,
+  prompt: string,
+): Omit<TaskTemplate, 'id'> {
+  const normalizedTitle = title.trim();
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedTitle) {
+    throw new Error('请输入模板名称');
+  }
+  if (!normalizedPrompt) {
+    throw new Error('请输入模板内容');
+  }
+
+  return {
+    title: normalizedTitle,
+    category: category.trim() || '通用',
+    prompt: normalizedPrompt,
   };
 }
 

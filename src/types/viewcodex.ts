@@ -61,6 +61,7 @@ export type SessionHistoryEntry = {
   skill: string;
   promptPreview: string;
   transcriptTail: string;
+  favorite: boolean;
   startedAt: string;
   endedAt: string;
   exitCode: number | null;
@@ -79,6 +80,7 @@ export type TaskAttachment = {
 export type TaskTemplate = {
   id: string;
   title: string;
+  category: string;
   prompt: string;
 };
 
@@ -211,6 +213,11 @@ export type ViewcodexApi = {
   updateTaskAttachmentNote: (id: string, note: string) => Promise<ViewcodexConfig>;
   removeTaskAttachment: (id: string) => Promise<ViewcodexConfig>;
   clearTaskAttachments: (projectPath?: string) => Promise<ViewcodexConfig>;
+  addTaskTemplate: (title: string, category: string, prompt: string) => Promise<ViewcodexConfig>;
+  updateTaskTemplate: (id: string, title: string, category: string, prompt: string) => Promise<ViewcodexConfig>;
+  removeTaskTemplate: (id: string) => Promise<ViewcodexConfig>;
+  toggleSessionHistoryFavorite: (id: string) => Promise<ViewcodexConfig>;
+  removeSessionHistory: (id: string) => Promise<ViewcodexConfig>;
   readGptConfig: () => Promise<GptConfigFile>;
   writeGptConfig: (content: string) => Promise<GptConfigFile>;
   setProjectPromptDraft: (projectPath: string, promptDraft: string) => Promise<ViewcodexConfig>;

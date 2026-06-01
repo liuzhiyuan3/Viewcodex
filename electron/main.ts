@@ -11,6 +11,7 @@ import {
   addPromptMemory,
   addStartupDocs,
   addTaskAttachments,
+  addTaskTemplate,
   clearSessionHistory,
   clearTaskAttachments,
   createStartupDoc,
@@ -25,13 +26,17 @@ import {
   removePromptMemory,
   removeStartupDoc,
   removeTaskAttachment,
+  removeSessionHistory,
+  removeTaskTemplate,
   selectExistingProject,
   setCodexCliPath,
   setCommitAfterTask,
   setProjectPromptDraft,
   setProjectRunConfig,
   setTeamRolePrompt,
+  toggleSessionHistoryFavorite,
   updatePromptMemory,
+  updateTaskTemplate,
   type ProjectRunConfig,
   type TaskMode,
   type TeamRolePrompts,
@@ -156,6 +161,26 @@ ipcMain.handle('config:update-prompt-memory', (_event, id: string, title: string
 
 ipcMain.handle('config:remove-prompt-memory', (_event, id: string) => {
   return removePromptMemory(id);
+});
+
+ipcMain.handle('templates:add', (_event, title: string, category: string, prompt: string) => {
+  return addTaskTemplate(title, category, prompt);
+});
+
+ipcMain.handle('templates:update', (_event, id: string, title: string, category: string, prompt: string) => {
+  return updateTaskTemplate(id, title, category, prompt);
+});
+
+ipcMain.handle('templates:remove', (_event, id: string) => {
+  return removeTaskTemplate(id);
+});
+
+ipcMain.handle('session-history:favorite', (_event, id: string) => {
+  return toggleSessionHistoryFavorite(id);
+});
+
+ipcMain.handle('session-history:remove', (_event, id: string) => {
+  return removeSessionHistory(id);
 });
 
 ipcMain.handle('attachments:select', async (_event, projectPath: string) => {
@@ -404,6 +429,7 @@ ipcMain.handle('terminal:start', async (event, options: TerminalStartOptions) =>
         skill: metadata.skill,
         promptPreview: metadata.promptPreview,
         transcriptTail: cleanTerminalTranscript(metadata.transcriptTail).slice(-12_000),
+        favorite: false,
         startedAt: metadata.startedAt,
         endedAt: new Date().toISOString(),
         exitCode,
@@ -450,6 +476,7 @@ ipcMain.handle('terminal:kill', (_event, sessionId: string) => {
       skill: metadata.skill,
       promptPreview: metadata.promptPreview,
       transcriptTail: cleanTerminalTranscript(metadata.transcriptTail).slice(-12_000),
+      favorite: false,
       startedAt: metadata.startedAt,
       endedAt: new Date().toISOString(),
       exitCode: null,

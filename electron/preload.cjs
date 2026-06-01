@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('viewcodex', {
   updateTaskAttachmentNote: (id, note) => ipcRenderer.invoke('attachments:update-note', id, note),
   removeTaskAttachment: (id) => ipcRenderer.invoke('attachments:remove', id),
   clearTaskAttachments: (projectPath) => ipcRenderer.invoke('attachments:clear', projectPath),
+  addTaskTemplate: (title, category, prompt) => ipcRenderer.invoke('templates:add', title, category, prompt),
+  updateTaskTemplate: (id, title, category, prompt) =>
+    ipcRenderer.invoke('templates:update', id, title, category, prompt),
+  removeTaskTemplate: (id) => ipcRenderer.invoke('templates:remove', id),
+  toggleSessionHistoryFavorite: (id) => ipcRenderer.invoke('session-history:favorite', id),
+  removeSessionHistory: (id) => ipcRenderer.invoke('session-history:remove', id),
   readGptConfig: () => ipcRenderer.invoke('gpt-config:read'),
   writeGptConfig: (content) => ipcRenderer.invoke('gpt-config:write', content),
   setProjectPromptDraft: (projectPath, promptDraft) =>
