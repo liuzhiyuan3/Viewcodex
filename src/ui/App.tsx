@@ -9,6 +9,8 @@ import {
   Play,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
   RotateCw,
   Save,
@@ -191,6 +193,7 @@ export function App() {
   const [selectedTeamRole, setSelectedTeamRole] = useState<Exclude<CodexRole, 'solo'>>('planner');
   const [teamRolePromptDrafts, setTeamRolePromptDrafts] = useState<TeamRolePrompts>(fallbackConfig.teamRolePrompts);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [cliInfoCollapsed, setCliInfoCollapsed] = useState(false);
   const [status, setStatus] = useState('就绪');
   const [error, setError] = useState<string | null>(null);
   const terminalsByIdRef = useRef(new Map<string, Terminal>());
@@ -1997,84 +2000,149 @@ export function App() {
         ) : null}
 
         {activeView === 'cli' ? (
-          <section className="cli-workspace">
-            <div className="prompt-dock">
-              <div className="prompt-toolbar">
-                <label>
-                  <span>Skill</span>
-                  <select value={selectedSkill} onChange={(event) => void updateSelectedSkill(event.target.value)}>
-                    <option value="">不使用 skill</option>
-                    {availableSkills.map((skill) => (
-                      <option key={skill.path || skill.name} value={skill.name}>
-                        {skill.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button title="重新扫描本机 skills" aria-label="重新扫描本机 skills" onClick={() => void refreshAvailableSkills()}>
-                  <RefreshCw size={14} />
-                </button>
-                <label>
-                  <span>Prompt</span>
-                  <select
-                    value=""
-                    onChange={(event) => {
-                      if (event.target.value) {
-                        insertPromptMemory(event.target.value);
-                      }
-                    }}
+          <section className={`cli-workspace ${cliInfoCollapsed ? 'info-collapsed' : ''}`}>
+            <div className="cli-main">
+              <div className="prompt-dock">
+                <div className="prompt-toolbar">
+                  <label>
+                    <span>Skill</span>
+                    <select value={selectedSkill} onChange={(event) => void updateSelectedSkill(event.target.value)}>
+                      <option value="">不使用 skill</option>
+                      {availableSkills.map((skill) => (
+                        <option key={skill.path || skill.name} value={skill.name}>
+                          {skill.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    title="重新扫描本机 skills"
+                    aria-label="重新扫描本机 skills"
+                    onClick={() => void refreshAvailableSkills()}
                   >
-                    <option value="">插入常用 Prompt</option>
-                    {config.promptMemories.map((memory) => (
-                      <option key={memory.id} value={memory.id}>
-                        {memory.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>模板</span>
-                  <select
-                    value=""
-                    onChange={(event) => {
-                      if (event.target.value) {
-                        insertTaskTemplate(event.target.value);
-                      }
-                    }}
+                    <RefreshCw size={14} />
+                  </button>
+                  <label>
+                    <span>Prompt</span>
+                    <select
+                      value=""
+                      onChange={(event) => {
+                        if (event.target.value) {
+                          insertPromptMemory(event.target.value);
+                        }
+                      }}
+                    >
+                      <option value="">插入常用 Prompt</option>
+                      {config.promptMemories.map((memory) => (
+                        <option key={memory.id} value={memory.id}>
+                          {memory.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>模板</span>
+                    <select
+                      value=""
+                      onChange={(event) => {
+                        if (event.target.value) {
+                          insertTaskTemplate(event.target.value);
+                        }
+                      }}
+                    >
+                      <option value="">选择任务模板</option>
+                      {config.taskTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button title="选择任务附件" aria-label="选择任务附件" onClick={() => void selectTaskAttachments()}>
+                    <Paperclip size={14} />
+                  </button>
+                  <button title="启动检查" aria-label="启动检查" onClick={() => void runStartupCheck()}>
+                    <RefreshCw size={14} />
+                  </button>
+                  <button title="打开项目规范" aria-label="打开项目规范" onClick={() => void openDefaultStartupDoc()}>
+                    <BookOpenCheck size={14} />
+                  </button>
+                  <button
+                    title={cliInfoCollapsed ? '展开信息栏' : '收起信息栏'}
+                    aria-label={cliInfoCollapsed ? '展开信息栏' : '收起信息栏'}
+                    onClick={() => setCliInfoCollapsed((value) => !value)}
                   >
-                    <option value="">选择任务模板</option>
-                    {config.taskTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button title="选择任务附件" aria-label="选择任务附件" onClick={() => void selectTaskAttachments()}>
-                  <Paperclip size={14} />
-                </button>
-                <button title="启动检查" aria-label="启动检查" onClick={() => void runStartupCheck()}>
-                  <RefreshCw size={14} />
-                </button>
-                <button title="打开项目规范" aria-label="打开项目规范" onClick={() => void openDefaultStartupDoc()}>
-                  <BookOpenCheck size={14} />
-                </button>
-                <span className="token-estimate" title="粗略按 4 字符约 1 token 估算">
-                  {formatTaskMode(selectedTaskMode)} · 约 {formatTokenCount(promptTokenEstimate)} /{' '}
-                  {formatContextLength(selectedContextLengthTokens)}
-                </span>
+                    {cliInfoCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+                  </button>
+                  <span className="token-estimate" title="粗略按 4 字符约 1 token 估算">
+                    {formatTaskMode(selectedTaskMode)} · 约 {formatTokenCount(promptTokenEstimate)} /{' '}
+                    {formatContextLength(selectedContextLengthTokens)}
+                  </span>
+                </div>
+                <textarea
+                  placeholder="输入需求"
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                />
               </div>
-              <textarea
-                placeholder="输入需求"
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-              />
-              {taskAttachmentsForProject.length > 0 ? (
-                <div className="attachment-tray">
-                  <div className="attachment-tray-header">
-                    <span>{taskAttachmentsForProject.length} 个任务附件</span>
-                    <button onClick={() => void clearCurrentProjectTaskAttachments()}>清空</button>
+              <section className="terminal-panel">
+                <div className="terminal-header">
+                  <h2>CLI</h2>
+                  <span>{activeSoloSession?.command ?? '未启动'}</span>
+                  {activeSoloSession ? <ContextUsageMeter session={activeSoloSession} /> : null}
+                  <div className="terminal-actions">
+                    <button onClick={() => void refreshWorkspaceStatus()}>
+                      <RefreshCw size={14} />
+                      刷新
+                    </button>
+                    <button onClick={clearActiveTerminal}>
+                      <Eraser size={14} />
+                      清屏
+                    </button>
+                    <button onClick={() => void stopCodex()}>
+                      <Square size={13} />
+                      停止
+                    </button>
+                    <button onClick={() => void restartCodex()}>
+                      <RotateCw size={14} />
+                      重启
+                    </button>
                   </div>
+                </div>
+                {sessions.filter((session) => session.role === 'solo').length === 0 ? (
+                  <div className="terminal-empty">未启动</div>
+                ) : (
+                  sessions.filter((session) => session.role === 'solo').map((session) => (
+                    <TerminalViewport
+                      active={session.id === activeSessionId}
+                      fitAddon={session.fitAddon}
+                      key={session.id}
+                      sessionId={session.id}
+                      terminal={session.terminal}
+                      sidebarCollapsed={sidebarCollapsed || cliInfoCollapsed}
+                    />
+                  ))
+                )}
+              </section>
+            </div>
+            <aside className="cli-info-panel" aria-hidden={cliInfoCollapsed}>
+              <div className="cli-info-header">
+                <strong>上下文</strong>
+                <button title="收起信息栏" aria-label="收起信息栏" onClick={() => setCliInfoCollapsed(true)}>
+                  <PanelRightClose size={14} />
+                </button>
+              </div>
+              <section className="cli-info-section">
+                <div className="panel-title-row session-history-title">
+                  <h2>任务附件</h2>
+                  <div className="compact-actions">
+                    <button disabled={taskAttachmentsForProject.length === 0} onClick={() => void clearCurrentProjectTaskAttachments()}>
+                      <Eraser size={14} />
+                      清空
+                    </button>
+                  </div>
+                </div>
+                {taskAttachmentsForProject.length > 0 ? (
                   <div className="attachment-list">
                     {taskAttachmentsForProject.map((attachment) => (
                       <TaskAttachmentRow
@@ -2085,94 +2153,65 @@ export function App() {
                       />
                     ))}
                   </div>
-                </div>
-              ) : null}
-            </div>
-            {visibleSoloSessions.length > 0 ? (
-              <div className="session-list">
-                {visibleSoloSessions.map((session) => (
-                  <button
-                    className={`session-row ${session.id === activeSessionId ? 'active' : ''}`}
-                    key={session.id}
-                    onClick={() => setActiveSessionId(session.id)}
-                  >
-                    <span className={`status-dot ${session.status === 'running' ? 'running' : 'exited'}`} />
-                    <span>
-                      <strong>{session.skill || session.model}</strong>
-                      <small>
-                        {session.status === 'running' ? '运行中' : `已退出 ${session.exitCode ?? ''}`} · {session.startedAt}
-                      </small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {sessionHistoryForProject.length > 0 ? (
-              <>
+                ) : (
+                  <p className="empty-text">暂无附件</p>
+                )}
+              </section>
+              <section className="cli-info-section">
+                <h2>当前会话</h2>
+                {visibleSoloSessions.length > 0 ? (
+                  <div className="session-list">
+                    {visibleSoloSessions.map((session) => (
+                      <button
+                        className={`session-row ${session.id === activeSessionId ? 'active' : ''}`}
+                        key={session.id}
+                        onClick={() => setActiveSessionId(session.id)}
+                      >
+                        <span className={`status-dot ${session.status === 'running' ? 'running' : 'exited'}`} />
+                        <span>
+                          <strong>{session.skill || session.model}</strong>
+                          <small>
+                            {session.status === 'running' ? '运行中' : `已退出 ${session.exitCode ?? ''}`} ·{' '}
+                            {session.startedAt}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-text">暂无会话</p>
+                )}
+              </section>
+              <section className="cli-info-section">
                 <div className="panel-title-row session-history-title">
                   <h2>最近会话</h2>
                   <div className="compact-actions">
-                    <button onClick={() => void clearCurrentProjectSessionHistory()}>
+                    <button disabled={sessionHistoryForProject.length === 0} onClick={() => void clearCurrentProjectSessionHistory()}>
                       <Eraser size={14} />
                       清空
                     </button>
                   </div>
                 </div>
-                <div className="session-list history-list">
-                  {sessionHistoryForProject.map((entry) => (
-                    <div className="session-row history-row" key={entry.id}>
-                      <span className="status-dot exited" />
-                      <span>
-                        <strong>{entry.skill || entry.model || formatRoleName(entry.role as CodexRole)}</strong>
-                        <small>
-                          {formatRoleName(entry.role as CodexRole)} · 退出码 {entry.exitCode ?? 'unknown'} ·{' '}
-                          {formatDateTime(entry.endedAt)}
-                        </small>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
-            <section className="terminal-panel">
-              <div className="terminal-header">
-                <h2>CLI</h2>
-                <span>{activeSoloSession?.command ?? '未启动'}</span>
-                {activeSoloSession ? <ContextUsageMeter session={activeSoloSession} /> : null}
-                <div className="terminal-actions">
-                  <button onClick={() => void refreshWorkspaceStatus()}>
-                    <RefreshCw size={14} />
-                    刷新
-                  </button>
-                  <button onClick={clearActiveTerminal}>
-                    <Eraser size={14} />
-                    清屏
-                  </button>
-                  <button onClick={() => void stopCodex()}>
-                    <Square size={13} />
-                    停止
-                  </button>
-                  <button onClick={() => void restartCodex()}>
-                    <RotateCw size={14} />
-                    重启
-                  </button>
-                </div>
-              </div>
-              {sessions.filter((session) => session.role === 'solo').length === 0 ? (
-                <div className="terminal-empty">未启动</div>
-              ) : (
-                sessions.filter((session) => session.role === 'solo').map((session) => (
-                  <TerminalViewport
-                    active={session.id === activeSessionId}
-                    fitAddon={session.fitAddon}
-                    key={session.id}
-                    sessionId={session.id}
-                    terminal={session.terminal}
-                    sidebarCollapsed={sidebarCollapsed}
-                  />
-                ))
-              )}
-            </section>
+                {sessionHistoryForProject.length > 0 ? (
+                  <div className="session-list history-list">
+                    {sessionHistoryForProject.map((entry) => (
+                      <div className="session-row history-row" key={entry.id}>
+                        <span className="status-dot exited" />
+                        <span>
+                          <strong>{entry.skill || entry.model || formatRoleName(entry.role as CodexRole)}</strong>
+                          <small>
+                            {formatRoleName(entry.role as CodexRole)} · 退出码 {entry.exitCode ?? 'unknown'} ·{' '}
+                            {formatDateTime(entry.endedAt)}
+                          </small>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-text">暂无历史</p>
+                )}
+              </section>
+            </aside>
           </section>
         ) : null}
 

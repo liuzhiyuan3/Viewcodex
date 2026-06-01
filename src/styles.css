@@ -795,12 +795,96 @@ button:disabled {
 }
 
 .cli-workspace {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
   flex: 1;
-  flex-direction: column;
   gap: 8px;
   min-height: 0;
   overflow: hidden;
+}
+
+.cli-workspace.info-collapsed {
+  grid-template-columns: minmax(0, 1fr) 0;
+  gap: 0;
+}
+
+.cli-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cli-info-panel {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(197, 204, 195, 0.78);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 18px 46px rgba(28, 34, 30, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.cli-info-panel[aria-hidden="true"] {
+  border: 0;
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  pointer-events: none;
+}
+
+.cli-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+.cli-info-header strong,
+.cli-info-section h2 {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.cli-info-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 0;
+}
+
+.cli-info-section {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.cli-info-section:last-child {
+  flex: 1;
+  border-bottom: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.cli-info-section h2 {
+  margin: 0;
 }
 
 .team-workspace {
@@ -1073,6 +1157,14 @@ button:disabled {
   gap: 8px;
   border-top: 1px solid var(--line);
   padding-top: 8px;
+}
+
+.cli-info-panel .attachment-row {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+
+.cli-info-panel .attachment-row input {
+  grid-column: 2 / -1;
 }
 
 .attachment-row:first-child {
