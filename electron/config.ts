@@ -595,16 +595,12 @@ export async function getStartupDocContext(
   const handoff = options.consumeHandoff
     ? await consumeSessionHandoff(projectPath)
     : await readSessionHandoff(projectPath);
-  const existingDocs = docs.filter((doc) => doc.exists && doc.content?.trim());
+  const existingDocs = docs.filter((doc) => doc.exists);
   const selectedDocs = taskMode === 'quick' ? existingDocs.filter((doc) => doc.required) : existingDocs;
   const context = prependSessionHandoffContext(
-    buildStartupDocContext(config, projectPath, selectedDocs, taskMode),
+    buildStartupDocContext(selectedDocs, taskMode),
     handoff,
   );
-
-  if (taskMode !== 'deep') {
-    await saveConfig(config);
-  }
 
   return {
     taskMode,
@@ -1082,47 +1078,35 @@ function createDocTemplate(projectName: string): string {
 `;
 }
 
-function buildFullStartupDocContext(docs: StartupDocReadResult[]): string {
-  if (docs.length === 0) {
-    return '';
-  }
-
-  return [
-    '以下是本项目启动文档全文，请在执行用户需求前遵守：',
-    ...docs.map((doc) => `\n## ${doc.path}${doc.required ? '（必读）' : '（可选）'}\n${doc.content?.trim() ?? ''}`),
-  ].join('\n');
-}
-
 function buildStartupDocContext(
-  config: ViewcodexConfig,
-  projectPath: string,
   docs: StartupDocReadResult[],
   taskMode: TaskMode,
 ): string {
-  if (taskMode === 'deep') {
-    return buildFullStartupDocContext(docs);
+  const requiredDocs = docs.filter((doc) => doc.required);
+  const optionalDocs = taskMode === 'quick' ? [] : docs.filter((doc) => !doc.required);
+  const lines = [
+    '启动前请先阅读本项目 Markdown 文档；这里只提供路径，不注入正文。',
+    '阅读完成后再执行用户需求，并遵守文档中的项目规则、约束和注意事项。',
+    '',
+    '## 必读文档',
+    ...(requiredDocs.length > 0 ? requiredDocs.map((doc) => `- ${doc.path}`) : ['- 无']),
+  ];
+
+  if (optionalDocs.length > 0) {
+    lines.push('', '## 选读文档', ...optionalDocs.map((doc) => `- ${doc.path}`));
   }
 
-  if (taskMode === 'standard') {
-    const requiredDocs = docs.filter((doc) => doc.required);
-    const optionalDocs = docs.filter((doc) => !doc.required);
-    const requiredContext = buildFullStartupDocContext(requiredDocs);
-    const optionalContext = buildSummaryStartupDocContext(config, projectPath, optionalDocs, taskMode);
-
-    return [requiredContext, optionalContext].filter(Boolean).join('\n\n');
-  }
-
-  return buildSummaryStartupDocContext(config, projectPath, docs.filter((doc) => doc.required), taskMode);
+  return lines.join('\n');
 }
 
 function prependSessionHandoffContext(context: string, handoff: SessionHandoffDoc | null): string {
-  if (!handoff?.exists || !handoff.content?.trim()) {
+  if (!handoff?.exists) {
     return context;
   }
 
   return [
-    '以下是上一次 Codex 会话的临时交接记录。它不是项目规范，只用于本次快速恢复上下文；阅读后系统会删除原文件：',
-    handoff.content.trim(),
+    '启动前还要阅读本项目临时会话交接文档。它不是项目规范，只用于本次快速恢复上下文；系统已在本次启动时消费原文件：',
+    `- ${handoff.path}`,
     context,
   ].filter(Boolean).join('\n\n');
 }
@@ -1138,71 +1122,6 @@ function normalizeSessionHandoffContent(content: string): string {
   }
 
   return `${trimmed}\n`;
-}
-
-function buildSummaryStartupDocContext(
-  config: ViewcodexConfig,
-  projectPath: string,
-  docs: StartupDocReadResult[],
-  taskMode: TaskMode,
-): string {
-  if (docs.length === 0) {
-    return '';
-  }
-
-  const maxChars = taskMode === 'quick' ? 700 : 1200;
-  const projectCache = (config.startupDocSummaryCache[projectPath] ??= {});
-  const summaries = docs.map((doc) => {
-    const content = doc.content?.trim() ?? '';
-    const sourceHash = hashContent(content);
-    const cached = projectCache[doc.path];
-
-    if (!cached || cached.sourceHash !== sourceHash) {
-      projectCache[doc.path] = {
-        sourceHash,
-        summary: summarizeMarkdown(content, maxChars),
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    return `\n## ${doc.path}${doc.required ? '（必读）' : '（可选）'}\n${projectCache[doc.path].summary}`;
-  });
-
-  return ['以下是本项目启动文档摘要，请在执行用户需求前遵守：', ...summaries].join('\n');
-}
-
-function summarizeMarkdown(content: string, maxChars: number): string {
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('```'));
-  const selected: string[] = [];
-
-  for (const line of lines) {
-    const isHeading = /^#{1,3}\s+/.test(line);
-    const isListItem = /^[-*]\s+/.test(line);
-    const shouldKeep = isHeading || isListItem || selected.length < 8;
-
-    if (shouldKeep) {
-      selected.push(line);
-    }
-
-    if (selected.join('\n').length >= maxChars) {
-      break;
-    }
-  }
-
-  const summary = selected.join('\n').slice(0, maxChars).trim();
-  return summary || content.slice(0, maxChars).trim();
-}
-
-function hashContent(content: string): string {
-  let hash = 0;
-  for (let index = 0; index < content.length; index += 1) {
-    hash = (hash * 31 + content.charCodeAt(index)) >>> 0;
-  }
-
-  return `${content.length}:${hash.toString(16)}`;
 }
 
 function estimateTokens(text: string): number {

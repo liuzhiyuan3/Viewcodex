@@ -92,7 +92,7 @@ test('preserves mdx extension when creating startup docs', async () => {
   );
 });
 
-test('standard context preserves required docs and summarizes optional docs', async () => {
+test('startup context lists required and optional doc paths without injecting content', async () => {
   const projectPath = await createProject('context-modes');
   await configModule.upsertProject(projectPath);
   await configModule.createStartupDoc(projectPath, 'docs/required', true);
@@ -109,8 +109,11 @@ test('standard context preserves required docs and summarizes optional docs', as
   await configModule.writeStartupDocContent(projectPath, 'docs/optional.md', optionalContent);
 
   const standard = await configModule.getStartupDocContext(projectPath, 'standard');
-  assert.match(standard.context, /CRITICAL_REQUIRED_TAIL_MARKER/);
+  assert.match(standard.context, /启动前请先阅读本项目 Markdown 文档/);
+  assert.match(standard.context, /docs\/required\.md/);
   assert.match(standard.context, /docs\/optional\.md/);
+  assert.doesNotMatch(standard.context, /CRITICAL_REQUIRED_TAIL_MARKER/);
+  assert.doesNotMatch(standard.context, /optional detail 39/);
 
   const quick = await configModule.getStartupDocContext(projectPath, 'quick');
   assert.match(quick.context, /docs\/required\.md/);
@@ -124,11 +127,13 @@ test('session handoff is read once without becoming a startup doc', async () => 
   await configModule.writeSessionHandoff(projectPath, '# Handoff\n\nunfinished task');
 
   const preview = await configModule.getStartupDocContext(projectPath, 'quick');
-  assert.match(preview.context, /unfinished task/);
+  assert.match(preview.context, /\.viewcodex\/codex-session-handoff\.md/);
+  assert.doesNotMatch(preview.context, /unfinished task/);
   assert.equal((await configModule.readSessionHandoff(projectPath)).exists, true);
 
   const consumed = await configModule.getStartupDocContext(projectPath, 'quick', { consumeHandoff: true });
-  assert.match(consumed.context, /unfinished task/);
+  assert.match(consumed.context, /\.viewcodex\/codex-session-handoff\.md/);
+  assert.doesNotMatch(consumed.context, /unfinished task/);
   assert.equal(consumed.docs.some((doc) => doc.path.includes('codex-session-handoff')), false);
   assert.equal((await configModule.readSessionHandoff(projectPath)).exists, false);
 });

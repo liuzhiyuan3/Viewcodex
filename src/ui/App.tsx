@@ -975,7 +975,7 @@ export function App() {
       const startupContext = [
         docContext.context,
         buildTaskAttachmentContext(attachments),
-        buildSessionHistoryContext(entry),
+        buildSessionContinuationBrief(entry),
       ].filter((value) => value.trim()).join('\n\n');
       const continuePrompt = composePromptWithStartupContext(
         '请基于上述历史会话继续推进，优先处理未完成事项，并在完成后说明本次接续做了什么。',
@@ -1425,6 +1425,45 @@ export function App() {
 
     activeSoloSession.terminal.clear();
     setStatus('CLI 已清屏。');
+  }
+
+  async function removeCurrentSession(sessionId: string) {
+    const session = sessionsRef.current.find((candidate) => candidate.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    try {
+      setError(null);
+      if (session.status === 'running') {
+        if (!window.viewcodex) {
+          setError('当前环境不是 Electron 窗口，无法停止 Codex。');
+          return;
+        }
+        await window.viewcodex.killTerminal(session.id);
+      }
+
+      terminalsByIdRef.current.get(session.id)?.dispose();
+      terminalsByIdRef.current.delete(session.id);
+      outputBySessionIdRef.current.delete(session.id);
+      forwardedExecutorDoneRef.current.delete(session.id);
+      forwardedReviewerResultRef.current.delete(session.id);
+
+      const nextSessions = sessionsRef.current.filter((candidate) => candidate.id !== session.id);
+      sessionsRef.current = nextSessions;
+      setSessions(nextSessions);
+      if (activeSessionId === session.id) {
+        const nextActiveSession =
+          nextSessions.find((candidate) => candidate.projectPath === session.projectPath && candidate.role === session.role) ??
+          nextSessions[0] ??
+          null;
+        setActiveSessionId(nextActiveSession?.id ?? null);
+      }
+      await refreshRunningCodexProcesses();
+      setStatus(session.status === 'running' ? '当前会话已停止并移除。' : '当前会话已移除。');
+    } catch (caughtError) {
+      setError(toErrorMessage(caughtError));
+    }
   }
 
   async function startTeam() {
@@ -2442,20 +2481,22 @@ export function App() {
                 {visibleSoloSessions.length > 0 ? (
                   <div className="session-list">
                     {visibleSoloSessions.map((session) => (
-                      <button
+                      <div
                         className={`session-row ${session.id === activeSessionId ? 'active' : ''}`}
                         key={session.id}
-                        onClick={() => setActiveSessionId(session.id)}
                       >
                         <span className={`status-dot ${session.status === 'running' ? 'running' : 'exited'}`} />
-                        <span>
+                        <button className="session-select-button" onClick={() => setActiveSessionId(session.id)}>
                           <strong>{session.skill || session.model}</strong>
                           <small>
                             {session.status === 'running' ? '运行中' : `已退出 ${session.exitCode ?? ''}`} ·{' '}
                             {session.startedAt}
                           </small>
-                        </span>
-                      </button>
+                        </button>
+                        <button className="session-remove-button" onClick={() => void removeCurrentSession(session.id)}>
+                          {session.status === 'running' ? '停止并移除' : '移除'}
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : (
@@ -3140,20 +3181,29 @@ function buildSessionHistoryDetail(entry: SessionHistoryEntry): string {
   ].filter(Boolean).join('\n');
 }
 
-function buildSessionHistoryContext(entry: SessionHistoryEntry): string {
+function buildSessionContinuationBrief(entry: SessionHistoryEntry): string {
+  const promptSummary = compactText(entry.promptPreview, 420);
+  const exitSummary = entry.exitCode === 0 ? '上次会话正常结束' : `上次会话退出码：${entry.exitCode ?? 'unknown'}`;
+
   return [
-    '## 要继续的历史会话',
+    '## 历史会话简述',
     `- 会话 ID：${entry.id}`,
-    `- 角色：${formatRoleName(entry.role as CodexRole)}`,
-    `- 模型：${entry.model || '未知'}`,
-    `- Skill：${entry.skill || '不使用'}`,
-    `- 开始：${entry.startedAt}`,
-    `- 结束：${entry.endedAt}`,
-    `- 退出码：${entry.exitCode ?? 'unknown'}`,
+    `- 时间：${entry.startedAt} -> ${entry.endedAt}`,
+    `- 状态：${exitSummary}`,
     '',
-    entry.promptPreview.trim() ? `### 历史输入\n\n${entry.promptPreview.trim()}` : '',
-    entry.transcriptTail.trim() ? `### 历史终端尾部记录\n\n\`\`\`text\n${entry.transcriptTail.trim()}\n\`\`\`` : '',
+    promptSummary ? `上次大致在做：${promptSummary}` : '上次没有留下可用的任务输入摘要。',
+    '',
+    '只把这段当作启动提示，不要复述历史；如需更多细节，让用户打开历史详情。',
   ].filter(Boolean).join('\n');
+}
+
+function compactText(text: string, maxCharacters: number): string {
+  const normalized = text.trim().replace(/\n{3,}/g, '\n\n');
+  if (normalized.length <= maxCharacters) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxCharacters).trimEnd()}\n\n[已截断，仅保留前 ${maxCharacters} 字符]`;
 }
 
 function estimateTokens(text: string): number {

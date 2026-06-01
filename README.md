@@ -8,7 +8,7 @@ Viewcodex 是一个面向 Codex CLI 的本地可视化工作台。
 
 - 选择并管理本地项目目录
 - 为每个项目配置启动文档，例如 `AGENTS.md`、`README.md`、项目规范或需求文档
-- 启动 Codex 前自动读取项目上下文
+- 启动 Codex 前提供项目必读/选读文档路径，要求 Codex 自行阅读 Markdown
 - 选择模型、思考强度、上下文长度和任务模式
 - 自动发现用户本机已有的 Codex skills
 - 保存常用 Prompt，启动任务时快速插入
@@ -16,7 +16,7 @@ Viewcodex 是一个面向 Codex CLI 的本地可视化工作台。
 - 查看每个 Codex 会话的上下文使用进度
 - Team 模式支持 Planner、Executor、Reviewer 角色切换
 - 支持项目级 Git 配置，包括仓库目录、Origin URL 和任务分支策略
-- 上一次 Codex 会话结束后生成临时交接记录，下次启动时自动读取并删除
+- 上一次 Codex 会话结束后生成临时交接记录，下次启动时提供路径并删除原文件
 
 ## 技术栈
 
@@ -79,11 +79,11 @@ npm run dev
 3. 在“文档”页面添加启动文档。
 4. 在“配置”页面选择模型、上下文长度、Git 策略等配置。
 5. 在 CLI 页面输入需求。
-6. 点击“启动”，Viewcodex 会读取项目文档并启动 Codex CLI。
+6. 点击“启动”，Viewcodex 会把项目文档路径和你的需求一起交给 Codex CLI。
 
 ## 启动文档
 
-启动文档是 Codex 每次开始处理项目任务前需要阅读的上下文。
+启动文档是 Codex 每次开始处理项目任务前需要阅读的项目 Markdown。
 
 常见启动文档包括：
 
@@ -97,9 +97,9 @@ npm run dev
 启动文档分为：
 
 - 必读：每次都会优先加入上下文
-- 可选：根据任务模式进行摘要或读取
+- 可选：标准/深度任务会一起列入阅读路径
 
-这些文档属于你的项目内容，可以正常编辑和维护。
+Viewcodex 不会把启动文档正文塞进 prompt。它只会把文档路径列出来，并要求 Codex 在项目内自行阅读，这样可以减少 prompt 体积，避免长文档挤占上下文。
 
 ## Prompt 记忆
 
@@ -161,7 +161,40 @@ Team 模式提供三个角色：
 
 当一个 Codex 会话结束时，Viewcodex 会在项目内生成临时交接记录。
 
-这份记录不是项目规范，只用于下一次快速恢复上下文。下一次启动 Codex 时，Viewcodex 会自动读取它，并在读取后删除。
+这份记录不是项目规范，只用于下一次快速恢复上下文。下一次启动 Codex 时，Viewcodex 会把交接文档路径提供给 Codex，并在启动时删除原文件。
+
+## 本地打包
+
+项目使用 `electron-builder` 打包。
+
+先安装依赖并确认构建通过：
+
+```bash
+npm install
+npm run build
+```
+
+生成当前平台安装包：
+
+```bash
+npm run dist
+```
+
+只生成未压缩的应用目录，适合本地快速检查：
+
+```bash
+npm run dist:dir
+```
+
+macOS 打包：
+
+```bash
+npm run dist:mac
+```
+
+打包产物会输出到 `release/`，该目录不会提交到 Git。
+
+注意：Viewcodex 依赖本机 Codex CLI。打包后的 App 如果检测不到 `codex`，请在配置页填写 Codex CLI 的完整路径，例如 `/opt/homebrew/bin/codex`。
 
 ## 常用命令
 
