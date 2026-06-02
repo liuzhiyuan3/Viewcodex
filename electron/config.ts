@@ -143,8 +143,8 @@ export type SessionHandoffDoc = {
 
 const configDirectory = path.join(os.homedir(), '.viewcodex');
 const configPath = path.join(configDirectory, 'config.json');
-const sessionHandoffRelativePath = path.join('.viewcodex', 'codex-session-handoff.md');
-const taskAttachmentDirectory = path.join('.viewcodex', 'attachments');
+const sessionHandoffRelativePath = '.viewcodex/codex-session-handoff.md';
+const taskAttachmentDirectory = '.viewcodex/attachments';
 const maxTaskAttachmentsPerProject = 20;
 const maxTaskTemplates = 30;
 const imageAttachmentExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
@@ -392,7 +392,7 @@ export async function addTaskAttachments(
     const id = randomUUID();
     const sourceName = path.basename(filePath);
     const safeName = sanitizeAttachmentFileName(sourceName);
-    const relativePath = path.join(taskAttachmentDirectory, `${id}-${safeName}`);
+    const relativePath = `${taskAttachmentDirectory}/${id}-${safeName}`;
     const absolutePath = path.join(projectPath, relativePath);
     if (!isPathInside(projectPath, absolutePath)) {
       throw new Error('附件必须复制到项目目录内');
@@ -540,8 +540,9 @@ export async function addStartupDocs(
 export async function removeStartupDoc(projectPath: string, docPath: string): Promise<ViewcodexConfig> {
   const config = await loadConfig();
   const project = findProject(config, projectPath);
-  project.startupDocs.required = project.startupDocs.required.filter((entry) => entry !== docPath);
-  project.startupDocs.optional = project.startupDocs.optional.filter((entry) => entry !== docPath);
+  const relativePath = normalizeStoredStartupDocPath(docPath);
+  project.startupDocs.required = project.startupDocs.required.filter((entry) => entry !== relativePath);
+  project.startupDocs.optional = project.startupDocs.optional.filter((entry) => entry !== relativePath);
   return saveConfig(config);
 }
 
@@ -670,25 +671,28 @@ export async function consumeSessionHandoff(projectPath: string): Promise<Sessio
 export async function readStartupDocContent(projectPath: string, docPath: string): Promise<StartupDocReadResult> {
   const config = await loadConfig();
   const project = findProject(config, projectPath);
-  const required = project.startupDocs.required.includes(docPath);
-  const optional = project.startupDocs.optional.includes(docPath);
+  const relativePath = normalizeStoredStartupDocPath(docPath);
+  const required = project.startupDocs.required.includes(relativePath);
+  const optional = project.startupDocs.optional.includes(relativePath);
   if (!required && !optional) {
     throw new Error('只能读取已加入列表的启动文档');
   }
 
-  return readStartupDoc(projectPath, docPath, required);
+  return readStartupDoc(projectPath, relativePath, required);
 }
 
 export async function writeStartupDocContent(projectPath: string, docPath: string, content: string): Promise<void> {
   const config = await loadConfig();
   const project = findProject(config, projectPath);
-  const isStartupDoc = project.startupDocs.required.includes(docPath) || project.startupDocs.optional.includes(docPath);
+  const relativePath = normalizeStoredStartupDocPath(docPath);
+  const isStartupDoc =
+    project.startupDocs.required.includes(relativePath) || project.startupDocs.optional.includes(relativePath);
 
   if (!isStartupDoc) {
     throw new Error('只能编辑已加入列表的启动文档');
   }
 
-  const absolutePath = path.join(projectPath, docPath);
+  const absolutePath = path.join(projectPath, relativePath);
   if (!isPathInside(projectPath, absolutePath)) {
     throw new Error('文档路径不在项目目录内');
   }
@@ -759,12 +763,17 @@ function normalizeConfig(raw: Partial<ViewcodexConfig>): ViewcodexConfig {
 }
 
 function normalizeProject(project: Partial<ViewcodexProject>): ViewcodexProject {
+  const requiredStartupDocs = normalizeStartupDocList(project.startupDocs?.required ?? []);
+  const optionalStartupDocs = normalizeStartupDocList(project.startupDocs?.optional ?? []).filter(
+    (entry) => !requiredStartupDocs.includes(entry),
+  );
+
   return {
     name: project.name || (project.path ? path.basename(project.path) : '未命名项目'),
     path: project.path || '',
     startupDocs: {
-      required: project.startupDocs?.required ?? [],
-      optional: project.startupDocs?.optional ?? [],
+      required: requiredStartupDocs,
+      optional: optionalStartupDocs,
     },
     promptDraft: project.promptDraft ?? '',
     runConfig: {
@@ -949,14 +958,15 @@ function createDefaultRunConfig(config: ViewcodexConfig): ProjectRunConfig {
 }
 
 function addStartupDocPath(startupDocs: StartupDocs, relativePath: string, required: boolean): void {
-  assertSafeStartupDocPath(relativePath);
-  startupDocs.required = startupDocs.required.filter((entry) => entry !== relativePath);
-  startupDocs.optional = startupDocs.optional.filter((entry) => entry !== relativePath);
+  const normalizedPath = normalizeStoredStartupDocPath(relativePath);
+  assertSafeStartupDocPath(normalizedPath);
+  startupDocs.required = normalizeStartupDocList(startupDocs.required).filter((entry) => entry !== normalizedPath);
+  startupDocs.optional = normalizeStartupDocList(startupDocs.optional).filter((entry) => entry !== normalizedPath);
 
   if (required) {
-    startupDocs.required.push(relativePath);
+    startupDocs.required.push(normalizedPath);
   } else {
-    startupDocs.optional.push(relativePath);
+    startupDocs.optional.push(normalizedPath);
   }
 }
 
@@ -1008,11 +1018,12 @@ async function readStartupDoc(
   relativePath: string,
   required: boolean,
 ): Promise<StartupDocReadResult> {
-  const absolutePath = path.join(projectPath, relativePath);
+  const normalizedPath = normalizeStoredStartupDocPath(relativePath);
+  const absolutePath = path.join(projectPath, normalizedPath);
 
   if (!isPathInside(projectPath, absolutePath)) {
     return {
-      path: relativePath,
+      path: normalizedPath,
       required,
       exists: false,
       content: null,
@@ -1022,14 +1033,14 @@ async function readStartupDoc(
 
   try {
     return {
-      path: relativePath,
+      path: normalizedPath,
       required,
       exists: true,
       content: await fs.readFile(absolutePath, 'utf8'),
     };
   } catch (error) {
     return {
-      path: relativePath,
+      path: normalizedPath,
       required,
       exists: false,
       content: null,
@@ -1039,12 +1050,12 @@ async function readStartupDoc(
 }
 
 function normalizeMarkdownPath(inputName: string): string {
-  const trimmed = inputName.trim();
-  if (!trimmed) {
+  const normalizedPath = normalizeStoredStartupDocPath(inputName);
+  if (!normalizedPath) {
     throw new Error('请输入文档名称');
   }
 
-  return /\.(md|mdx)$/i.test(trimmed) ? trimmed : `${trimmed}.md`;
+  return /\.(md|mdx)$/i.test(normalizedPath) ? normalizedPath : `${normalizedPath}.md`;
 }
 
 function toProjectRelativePath(projectPath: string, docPath: string): string {
@@ -1053,7 +1064,15 @@ function toProjectRelativePath(projectPath: string, docPath: string): string {
     throw new Error('只能选择项目目录内的文档');
   }
 
-  return relativePath;
+  return normalizeStoredStartupDocPath(relativePath);
+}
+
+function normalizeStartupDocList(paths: string[]): string[] {
+  return [...new Set(paths.map(normalizeStoredStartupDocPath).filter(Boolean))];
+}
+
+function normalizeStoredStartupDocPath(relativePath: string): string {
+  return relativePath.trim().replaceAll('\\', '/').replace(/\/+/g, '/');
 }
 
 function isPathInside(parent: string, child: string): boolean {

@@ -49,6 +49,14 @@
         "nsis"
       ]
     },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Viewcodex",
+      "deleteAppDataOnUninstall": false
+    },
     "linux": {
       "category": "Development",
       "target": [

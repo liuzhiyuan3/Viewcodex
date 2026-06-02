@@ -92,6 +92,37 @@ test('preserves mdx extension when creating startup docs', async () => {
   );
 });
 
+test('normalizes windows separators for startup doc create read write and remove', async () => {
+  const projectPath = await createProject('windows-doc-paths');
+  await configModule.upsertProject(projectPath);
+
+  const createdConfig = await configModule.createStartupDoc(projectPath, 'docs\\windows-context', true);
+  const project = createdConfig.projects.find((entry) => entry.path === projectPath);
+
+  assert.deepEqual(project?.startupDocs.required, ['docs/windows-context.md']);
+  await configModule.writeStartupDocContent(projectPath, 'docs\\windows-context.md', '# Windows context');
+
+  const readDoc = await configModule.readStartupDocContent(projectPath, 'docs/windows-context.md');
+  assert.equal(readDoc.path, 'docs/windows-context.md');
+  assert.equal(readDoc.content, '# Windows context');
+
+  const removedConfig = await configModule.removeStartupDoc(projectPath, 'docs\\windows-context.md');
+  const removedProject = removedConfig.projects.find((entry) => entry.path === projectPath);
+  assert.equal(removedProject?.startupDocs.required.includes('docs/windows-context.md'), false);
+});
+
+test('deduplicates startup docs that differ only by windows separators', async () => {
+  const projectPath = await createProject('windows-doc-dedupe');
+  await configModule.upsertProject(projectPath);
+
+  await configModule.createStartupDoc(projectPath, 'docs/dupe-context.md', true);
+  const nextConfig = await configModule.createStartupDoc(projectPath, 'docs\\dupe-context.md', false);
+  const project = nextConfig.projects.find((entry) => entry.path === projectPath);
+
+  assert.deepEqual(project?.startupDocs.required, []);
+  assert.deepEqual(project?.startupDocs.optional, ['docs/dupe-context.md']);
+});
+
 test('startup context lists required and optional doc paths without injecting content', async () => {
   const projectPath = await createProject('context-modes');
   await configModule.upsertProject(projectPath);
